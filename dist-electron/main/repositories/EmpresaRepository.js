@@ -1,0 +1,22 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmpresaRepository = void 0;
+const questorConnection_1 = require("../database/questorConnection");
+const formatters_1 = require("../utils/formatters");
+class EmpresaRepository {
+    async obterEmpresas() {
+        const sql = `
+      SELECT 
+        CODIGOEMPRESA as CODIGO, 
+        CAST(NOMEEMPRESA AS VARCHAR(200) CHARACTER SET OCTETS) as NOME 
+      FROM EMPRESA
+      ORDER BY CODIGOEMPRESA
+    `;
+        const dadosBrutos = (await (0, questorConnection_1.executeQuery)(sql));
+        return dadosBrutos.map((empresa) => ({
+            CODIGO: empresa.CODIGO,
+            NOME: (0, formatters_1.decodificarTexto)(empresa.NOME),
+        }));
+    }
+}
+exports.EmpresaRepository = EmpresaRepository;

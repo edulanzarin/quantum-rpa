@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "baseUrl": "./src",
+    "paths": {
+      "@shared/*": ["shared/*"],
+      "@preload/*": ["preload/*"],
+      "@database/*": ["main/database/*"],
+      "@services/*": ["main/services/*"],
+      "@repositories/*": ["main/repositories/*"],
+      "@controllers/*": ["main/controllers/*"],
+      "@utils/*": ["main/utils/*"]
+    }
+  }
+}
