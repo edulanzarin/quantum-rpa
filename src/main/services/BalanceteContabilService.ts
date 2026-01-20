@@ -1,9 +1,9 @@
 import { PlanoContaService } from "@services/PlanoContaService";
 import { LancamentoContabilService } from "@services/LancamentoContabilService";
-import type { PlanoContaNode } from "@services/types/PlanoContaNode";
+import type { PlanoContaNode } from "@shared/types/PlanoContaNode";
 import type { BalanceteLinha } from "@shared/types/BalanceteLinha";
 
-export class BalanceteService {
+export class BalanceteContabilService {
   private planoContaService = new PlanoContaService();
   private lancamentoService = new LancamentoContabilService();
 
@@ -15,18 +15,17 @@ export class BalanceteService {
     codigoEmpresa: number,
     dataInicio: Date,
     dataFim: Date,
-    origem: string
+    origem: string,
   ): Promise<BalanceteLinha[]> {
-    const plano = await this.planoContaService.obterPlanoProcessado(
-      codigoEmpresa
-    );
+    const plano =
+      await this.planoContaService.obterPlanoProcessado(codigoEmpresa);
 
     const lancamentos =
       await this.lancamentoService.obterLancamentosContabeisPorOrigem(
         codigoEmpresa,
         dataInicio,
         dataFim,
-        origem
+        origem,
       );
 
     const saldosPorConta = this.lancamentoService.somarPorConta(lancamentos);
@@ -40,10 +39,10 @@ export class BalanceteService {
     }
 
     const linhasComSaldo = linhas.filter(
-      (linha) => linha.debito !== 0 || linha.credito !== 0
+      (linha) => linha.debito !== 0 || linha.credito !== 0,
     );
     linhasComSaldo.sort((a, b) =>
-      this.compararClassificacao(a.classificacao, b.classificacao)
+      this.compararClassificacao(a.classificacao, b.classificacao),
     );
 
     return linhasComSaldo;
@@ -74,7 +73,7 @@ export class BalanceteService {
     node: PlanoContaNode,
     saldosPorConta: Map<number, { debito: number; credito: number }>,
     resultado: BalanceteLinha[],
-    nivelMaximo: number
+    nivelMaximo: number,
   ): { debito: number; credito: number } {
     let debito = 0;
     let credito = 0;
@@ -90,7 +89,7 @@ export class BalanceteService {
         filho,
         saldosPorConta,
         resultado,
-        nivelMaximo
+        nivelMaximo,
       );
       debito += saldoFilho.debito;
       credito += saldoFilho.credito;

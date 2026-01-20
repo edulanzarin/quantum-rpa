@@ -1,4 +1,4 @@
-import { PlanoConta } from "@shared/types/PlanoConta";
+import { type PlanoConta } from "@shared/types/PlanoConta";
 
 export interface PlanoContaNode extends PlanoConta {
   nivel: number;

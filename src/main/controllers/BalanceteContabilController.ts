@@ -1,11 +1,11 @@
 import { ipcMain } from "electron";
-import { BalanceteService } from "@services/BalanceteService";
+import { BalanceteContabilService } from "@services/BalanceteContabilService";
 
-export class BalanceteController {
-  private service: BalanceteService;
+export class BalanceteContabilController {
+  private service: BalanceteContabilService;
 
   constructor() {
-    this.service = new BalanceteService();
+    this.service = new BalanceteContabilService();
   }
 
   registrarEventos() {
@@ -20,20 +20,20 @@ export class BalanceteController {
         codigoEmpresa: number,
         dataInicio: Date,
         dataFim: Date,
-        origem: string
+        origem: string,
       ) => {
         try {
           return await this.service.gerarBalancoPatrimonial(
             codigoEmpresa,
             dataInicio,
             dataFim,
-            origem
+            origem,
           );
         } catch (error) {
           console.error("Erro ao gerar balancete", error);
           return [];
         }
-      }
+      },
     );
   }
 }

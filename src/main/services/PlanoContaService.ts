@@ -1,6 +1,6 @@
 import { PlanoContaRepository } from "@repositories/PlanoContaRepository";
 import type { PlanoConta } from "@shared/types/PlanoConta";
-import type { PlanoContaNode } from "@services/types/PlanoContaNode";
+import type { PlanoContaNode } from "@shared/types/PlanoContaNode";
 
 export class PlanoContaService {
   private repository = new PlanoContaRepository();
@@ -21,7 +21,7 @@ export class PlanoContaService {
     const contasMescladas = this.mesclarContas(
       contasPadrao,
       contasEspecificas,
-      codigoEmpresa
+      codigoEmpresa,
     );
 
     return this.montarArvore(contasMescladas);
@@ -38,7 +38,7 @@ export class PlanoContaService {
   private mesclarContas(
     contasPadrao: Omit<PlanoConta, "CODIGOEMPRESA">[],
     contasEspecificas: PlanoConta[],
-    codigoEmpresa: number
+    codigoEmpresa: number,
   ): PlanoConta[] {
     const mapa = new Map<number, PlanoConta>();
 
@@ -55,7 +55,7 @@ export class PlanoContaService {
 
     const resultado = Array.from(mapa.values());
     resultado.sort((a, b) =>
-      this.compararClassificacao(a.CLASSIFCONTA, b.CLASSIFCONTA)
+      this.compararClassificacao(a.CLASSIFCONTA, b.CLASSIFCONTA),
     );
 
     return resultado;

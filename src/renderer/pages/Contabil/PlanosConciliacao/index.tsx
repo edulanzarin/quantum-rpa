@@ -4,7 +4,12 @@ import { Input } from "@components/ui/Input";
 import { Title } from "@components/ui/Title";
 import { Modal } from "@components/ui/Modal";
 import { Table, type Column } from "@components/ui/Table";
-import "./styles.css";
+import "../styles.css";
+
+interface Natureza {
+  CODIGOCFOP: number;
+  DESCRCFOP: string;
+}
 
 interface ItemForm {
   cfop: string;
@@ -14,7 +19,7 @@ interface ItemForm {
   contabiliza: boolean;
 }
 
-const EMPRESA_PADRAO = 1;
+const EMPRESA_PADRAO = 557;
 
 export function PlanosConciliacao() {
   const [formData, setFormData] = useState({
@@ -27,15 +32,16 @@ export function PlanosConciliacao() {
   const [planoCarregado, setPlanoCarregado] = useState(false);
 
   const [itensPlano, setItensPlano] = useState<any[]>([]);
+  const [buscaItens, setBuscaItens] = useState("");
 
   const [modalBuscaAberto, setModalBuscaAberto] = useState(false);
   const [modalItemAberto, setModalItemAberto] = useState(false);
   const [modalNaturezaAberto, setModalNaturezaAberto] = useState(false);
 
   const [listaPlanos, setListaPlanos] = useState<any[]>([]);
-  const [listaNaturezas, setListaNaturezas] = useState<any[]>([]);
+  const [listaNaturezas, setListaNaturezas] = useState<Natureza[]>([]);
   const [carregandoLista, setCarregandoLista] = useState(false);
-  const [buscandoNatureza, setBuscandoNatureza] = useState(false);
+  const [carregandoNaturezas, setCarregandoNaturezas] = useState(false);
 
   const [indiceEmEdicao, setIndiceEmEdicao] = useState<number | null>(null);
   const [itemForm, setItemForm] = useState<ItemForm>({
@@ -46,9 +52,23 @@ export function PlanosConciliacao() {
     contabiliza: true,
   });
 
+  const itensFiltrados = itensPlano.filter((item) => {
+    if (!buscaItens) return true;
+    const termo = buscaItens.toLowerCase();
+    return (
+      String(item.cfop).includes(termo) ||
+      (item.descricao && item.descricao.toLowerCase().includes(termo))
+    );
+  });
+
   const colunasPlanos: Column<any>[] = [
     { header: "Cód.", accessor: "id", width: "80px" },
     { header: "Nome do Plano", accessor: "nome_plano" },
+  ];
+
+  const colunasNatureza: Column<Natureza>[] = [
+    { header: "CFOP", accessor: "CODIGOCFOP", width: "80px" },
+    { header: "Descrição", accessor: "DESCRCFOP" },
   ];
 
   const colunasItens: Column<any>[] = [
@@ -57,7 +77,7 @@ export function PlanosConciliacao() {
       accessor: "cfop",
       width: "80px",
       render: (row) => (
-        <span style={{ fontWeight: "bold", color: "#334155" }}>{row.cfop}</span>
+        <span style={{ fontWeight: "600", color: "#333333" }}>{row.cfop}</span>
       ),
     },
     {
@@ -65,7 +85,7 @@ export function PlanosConciliacao() {
       accessor: "descricao",
       width: "auto",
       render: (row) => (
-        <span style={{ fontSize: "13px", color: "#64748b" }}>
+        <span style={{ fontSize: "0.85rem", color: "#666666" }}>
           {row.descricao}
         </span>
       ),
@@ -77,11 +97,11 @@ export function PlanosConciliacao() {
       render: (row) => (
         <span
           style={{
-            fontSize: "12px",
-            color: "#3b82f6",
-            backgroundColor: "#eff6ff",
+            fontSize: "0.8rem",
+            color: "#333333",
+            backgroundColor: "#f5f5f5",
             padding: "2px 6px",
-            borderRadius: "4px",
+            borderRadius: "3px",
           }}
         >
           {row.contasDebito?.join(", ") || "-"}
@@ -95,11 +115,11 @@ export function PlanosConciliacao() {
       render: (row) => (
         <span
           style={{
-            fontSize: "12px",
-            color: "#10b981",
-            backgroundColor: "#ecfdf5",
+            fontSize: "0.8rem",
+            color: "#333333",
+            backgroundColor: "#f5f5f5",
             padding: "2px 6px",
-            borderRadius: "4px",
+            borderRadius: "3px",
           }}
         >
           {row.contasCredito?.join(", ") || "-"}
@@ -114,9 +134,9 @@ export function PlanosConciliacao() {
       render: (row) => (
         <div style={{ display: "flex", justifyContent: "center" }}>
           {row.contabiliza ? (
-            <Check size={16} className="text-emerald-600" />
+            <Check size={16} style={{ color: "#666666" }} />
           ) : (
-            <X size={16} className="text-slate-300" />
+            <X size={16} style={{ color: "#cccccc" }} />
           )}
         </div>
       ),
@@ -127,7 +147,7 @@ export function PlanosConciliacao() {
       width: "100px",
       align: "center",
       render: (_, index) => (
-        <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
           <button
             className="btn-icon-sm"
             onClick={() => abrirModalEdicaoItem(index)}
@@ -154,13 +174,11 @@ export function PlanosConciliacao() {
 
   const buscarPorCodigo = async () => {
     if (!formData.codPlano) return;
-
     setLoading(true);
     try {
       const id = parseInt(formData.codPlano);
       // @ts-ignore
       const plano = await window.api.planos.obterPorId(id);
-
       if (plano) {
         setFormData({
           id: plano.id,
@@ -199,7 +217,7 @@ export function PlanosConciliacao() {
       }));
       setPlanoCarregado(true);
     } catch (error) {
-      // TODO: tratar erro futuramente
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -224,8 +242,12 @@ export function PlanosConciliacao() {
   };
 
   const abrirModalEdicaoItem = (index: number) => {
-    const item = itensPlano[index];
-    setIndiceEmEdicao(index);
+    const itemVisual = itensFiltrados[index];
+    const indexReal = itensPlano.indexOf(itemVisual);
+
+    setIndiceEmEdicao(indexReal);
+    const item = itensPlano[indexReal];
+
     setItemForm({
       cfop: String(item.cfop),
       descricao: item.descricao,
@@ -254,25 +276,49 @@ export function PlanosConciliacao() {
   };
 
   const removerItem = (index: number) => {
+    const itemVisual = itensFiltrados[index];
+    const indexReal = itensPlano.indexOf(itemVisual);
+
     const lista = [...itensPlano];
-    lista.splice(index, 1);
+    lista.splice(indexReal, 1);
     setItensPlano(lista);
   };
 
   const buscarNaturezaPorCodigo = async () => {
-    if (!itemForm.cfop || buscandoNatureza) return;
-    setBuscandoNatureza(true);
+    if (!itemForm.cfop) return;
     try {
       // @ts-ignore
       const nat = await window.api.naturezas.buscarPorCodigo(
         EMPRESA_PADRAO,
-        parseInt(itemForm.cfop)
+        parseInt(itemForm.cfop),
       );
       if (nat) setItemForm((prev) => ({ ...prev, descricao: nat.DESCRCFOP }));
-    } catch {
-    } finally {
-      setBuscandoNatureza(false);
+    } catch (error) {
+      console.error(error);
     }
+  };
+
+  const abrirModalNatureza = async () => {
+    setModalNaturezaAberto(true);
+    setCarregandoNaturezas(true);
+    try {
+      // @ts-ignore
+      const dados = await window.api.naturezas.listar(EMPRESA_PADRAO, "");
+      setListaNaturezas(dados);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setCarregandoNaturezas(false);
+    }
+  };
+
+  const selecionarNatureza = (nat: Natureza) => {
+    setItemForm((prev) => ({
+      ...prev,
+      cfop: String(nat.CODIGOCFOP),
+      descricao: nat.DESCRCFOP,
+    }));
+    setModalNaturezaAberto(false);
   };
 
   const abrirModalPesquisa = async () => {
@@ -282,8 +328,8 @@ export function PlanosConciliacao() {
       // @ts-ignore
       const dados = await window.api.planos.listar();
       setListaPlanos(dados);
-    } catch {
-      // TODO: tratar erro futuramente
+    } catch (error) {
+      console.error(error);
     } finally {
       setCarregandoLista(false);
     }
@@ -300,7 +346,7 @@ export function PlanosConciliacao() {
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="page-container">
       <div className="form-section">
         <Title title="Manutenção de Planos de Conciliação" />
 
@@ -320,7 +366,7 @@ export function PlanosConciliacao() {
               <button
                 className="input-group-btn"
                 onClick={abrirModalPesquisa}
-                title="Pesquisar (F2)"
+                title="Pesquisar"
               >
                 <Search size={16} />
               </button>
@@ -333,19 +379,11 @@ export function PlanosConciliacao() {
             placeholder="Ex: Indústria - Lucro Real"
             value={formData.nomePlano}
             onChange={handleInputChange}
-            style={{ fontWeight: "bold", color: "#334155" }}
+            style={{ fontWeight: "600", color: "#333333" }}
           />
         </div>
 
-        <div
-          style={{
-            marginTop: "24px",
-            display: "flex",
-            justifyContent: "flex-end",
-            borderTop: "1px solid var(--slate-100)",
-            paddingTop: "20px",
-          }}
-        >
+        <div className="form-actions">
           <button
             className="btn-primary"
             disabled={loading}
@@ -361,27 +399,31 @@ export function PlanosConciliacao() {
       </div>
 
       {planoCarregado && (
-        <div className="form-section" style={{ marginTop: "24px" }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-            }}
-          >
-            <Title title={`Itens do Plano (${itensPlano.length})`} />
-            <button
-              className="btn-success"
-              onClick={abrirModalNovoItem}
-              style={{ fontSize: "13px", padding: "6px 12px" }}
-            >
-              <Plus size={16} style={{ marginRight: 5 }} /> Adicionar CFOP
-            </button>
+        <div className="form-section" style={{ marginTop: "20px" }}>
+          <div className="section-header">
+            <Title title={`Itens do Plano (${itensFiltrados.length})`} />
+
+            <div className="section-actions">
+              <div className="input-group" style={{ width: "250px" }}>
+                <input
+                  className="form-input"
+                  placeholder="Pesquisar CFOP ou Descrição..."
+                  value={buscaItens}
+                  onChange={(e) => setBuscaItens(e.target.value)}
+                />
+                <button className="input-group-btn" disabled>
+                  <Search size={16} />
+                </button>
+              </div>
+
+              <button className="btn-primary" onClick={abrirModalNovoItem}>
+                Adicionar Conciliação
+              </button>
+            </div>
           </div>
 
           <Table
-            data={itensPlano}
+            data={itensFiltrados}
             columns={colunasItens}
             enableSearch={false}
           />
@@ -407,7 +449,7 @@ export function PlanosConciliacao() {
         onClose={() => setModalItemAberto(false)}
         title={indiceEmEdicao !== null ? "Editar Item" : "Novo Item"}
       >
-        <div className="form-content-modal" style={{ padding: "10px" }}>
+        <div className="modal-form">
           <div className="form-row">
             <div className="form-group" style={{ flex: "0 0 140px" }}>
               <label className="form-label">CFOP</label>
@@ -423,9 +465,7 @@ export function PlanosConciliacao() {
                 />
                 <button
                   className="input-group-btn"
-                  onClick={() => {
-                    setModalNaturezaAberto(true);
-                  }}
+                  onClick={abrirModalNatureza}
                 >
                   <Search size={16} />
                 </button>
@@ -435,7 +475,7 @@ export function PlanosConciliacao() {
               label="Descrição"
               value={itemForm.descricao}
               readOnly
-              style={{ backgroundColor: "#f8fafc" }}
+              style={{ backgroundColor: "#f5f5f5" }}
             />
           </div>
 
@@ -464,15 +504,8 @@ export function PlanosConciliacao() {
             />
           </div>
 
-          <div style={{ marginTop: 15 }}>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: "pointer",
-              }}
-            >
+          <div style={{ marginTop: 12 }}>
+            <label className="checkbox-label">
               <input
                 type="checkbox"
                 checked={itemForm.contabiliza}
@@ -482,22 +515,14 @@ export function PlanosConciliacao() {
                     contabiliza: e.target.checked,
                   }))
                 }
-                style={{ width: 16, height: 16 }}
               />
-              <span style={{ fontSize: 14 }}>Contabilizar lançamentos?</span>
+              <span>Contabiliza?</span>
             </label>
           </div>
 
-          <div
-            style={{
-              marginTop: 25,
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 10,
-            }}
-          >
+          <div className="modal-actions">
             <button
-              className="btn-danger"
+              className="btn-secondary"
               onClick={() => setModalItemAberto(false)}
             >
               Cancelar
@@ -512,11 +537,15 @@ export function PlanosConciliacao() {
       <Modal
         isOpen={modalNaturezaAberto}
         onClose={() => setModalNaturezaAberto(false)}
-        title="Pesquisar Natureza"
+        title="Pesquisar Natureza (CFOP)"
       >
-        <div style={{ padding: 20, textAlign: "center" }}>
-          Lista de Naturezas...
-        </div>
+        <Table<Natureza>
+          data={listaNaturezas}
+          columns={colunasNatureza}
+          onRowClick={selecionarNatureza}
+          isLoading={carregandoNaturezas}
+          enableSearch={true}
+        />
       </Modal>
     </div>
   );

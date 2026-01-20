@@ -11,7 +11,7 @@ export class NaturezaService {
     const natureza = await this.repository.obterPorCodigo(codigoEmpresa, cfop);
     if (!natureza) {
       throw new Error(
-        `CFOP ${cfop} não encontrada na empresa ${codigoEmpresa}.`
+        `CFOP ${cfop} não encontrada na empresa ${codigoEmpresa}.`,
       );
     }
     return natureza;

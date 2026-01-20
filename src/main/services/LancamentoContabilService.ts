@@ -1,6 +1,6 @@
 import { LancamentoContabilRepository } from "@repositories/LancamentoContabilRepository";
 import type { LancamentoContabil } from "@shared/types/LancamentoContabil";
-import type { MapaSaldoConta } from "@services/types/MapaSaldoConta";
+import type { MapaSaldoConta } from "@shared/types/MapaSaldoConta";
 
 export class LancamentoContabilService {
   private repository = new LancamentoContabilRepository();
@@ -13,13 +13,13 @@ export class LancamentoContabilService {
     codigoEmpresa: number,
     dataInicio: Date,
     dataFim: Date,
-    origem: string
+    origem: string,
   ): Promise<LancamentoContabil[]> {
     return this.repository.obterLancamentosContabeisPorOrigem(
       codigoEmpresa,
       dataInicio,
       dataFim,
-      origem
+      origem,
     );
   }
 
@@ -47,7 +47,7 @@ export class LancamentoContabilService {
     mapa: Map<number, { debito: number; credito: number }>,
     conta: number,
     debito: number,
-    credito: number
+    credito: number,
   ): void {
     const atual = mapa.get(conta) ?? { debito: 0, credito: 0 };
 

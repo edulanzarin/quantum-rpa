@@ -9,10 +9,11 @@ export class NaturezaRepository {
    */
   async listarNaturezas(
     codigoEmpresa: number,
-    termoBusca?: string
+    termoBusca?: string,
   ): Promise<Natureza[]> {
+    // ADICIONADO "DISTINCT" PARA REMOVER DUPLICADAS
     let sql = `
-      SELECT
+      SELECT DISTINCT
         CODIGOEMPRESA,
         CODIGOCFOP,
         CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
@@ -23,9 +24,13 @@ export class NaturezaRepository {
     const params: any[] = [codigoEmpresa];
 
     if (termoBusca) {
+      // Verifica se é número (busca exata ou inicio do código) ou texto
+      const termoNumerico = parseInt(termoBusca);
+
+      // Ajustei a lógica de busca para ser mais precisa
       sql += ` AND (CAST(CODIGOCFOP AS VARCHAR(10)) LIKE ? OR DESCRCFOP LIKE ?)`;
-      params.push(`%${termoBusca}%`);
-      params.push(`%${termoBusca}%`);
+      params.push(`${termoBusca}%`); // Código começa com...
+      params.push(`%${termoBusca}%`); // Descrição contém...
     }
 
     sql += ` ORDER BY CODIGOCFOP`;
@@ -44,10 +49,11 @@ export class NaturezaRepository {
    */
   async obterPorCodigo(
     codigoEmpresa: number,
-    codigoCfop: number
+    codigoCfop: number,
   ): Promise<Natureza | null> {
+    // ADICIONADO "DISTINCT" AQUI TAMBÉM POR SEGURANÇA
     const sql = `
-      SELECT
+      SELECT DISTINCT
         CODIGOEMPRESA,
         CODIGOCFOP,
         CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP

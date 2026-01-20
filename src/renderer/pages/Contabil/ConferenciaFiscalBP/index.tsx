@@ -1,14 +1,17 @@
 import React, { useState, useEffect, type KeyboardEvent } from "react";
 import { Search, Loader2 } from "lucide-react";
 import { Input } from "@components/ui/Input";
-import { Select } from "@components/ui/Select";
 import { Title } from "@components/ui/Title";
 import { Modal } from "@components/ui/Modal";
 import { Table, type Column } from "@components/ui/Table";
 import type { Empresa, BalanceteLinha } from "@shared/types";
-import "./styles.css";
+import "../styles.css";
 
-// Componente separado para valor animado
+interface BalanceteLinhaExpandida extends BalanceteLinha {
+  debitoFiscal: number;
+  creditoFiscal: number;
+}
+
 function AnimatedValue({ value }: { value: number }) {
   const [displayValue, setDisplayValue] = useState<number>(0);
 
@@ -18,15 +21,10 @@ function AnimatedValue({ value }: { value: number }) {
 
     function animate(timestamp: number) {
       if (start === null) start = timestamp;
-
       const progress = Math.min((timestamp - start) / duration, 1);
       setDisplayValue(value * progress);
-
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      }
+      if (progress < 1) requestAnimationFrame(animate);
     }
-
     requestAnimationFrame(animate);
   }, [value]);
 
@@ -48,9 +46,7 @@ export function ConferenciaFiscalBP() {
     dataInicial: "",
     dataFinal: "",
     codPlano: "",
-    planoConta: "1",
-    formato: "excel",
-    caminhoSalvar: "",
+    nomePlano: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -58,7 +54,7 @@ export function ConferenciaFiscalBP() {
   const [listaEmpresas, setListaEmpresas] = useState<Empresa[]>([]);
   const [carregandoLista, setCarregandoLista] = useState(false);
 
-  const [balancete, setBalancete] = useState<BalanceteLinha[]>([]);
+  const [balancete, setBalancete] = useState<BalanceteLinhaExpandida[]>([]);
   const [carregandoBalancete, setCarregandoBalancete] = useState(false);
 
   const colunasEmpresa: Column<Empresa>[] = [
@@ -70,11 +66,11 @@ export function ConferenciaFiscalBP() {
     return classificacao.split(".").length;
   };
 
-  const colunasBalancete: Column<BalanceteLinha>[] = [
+  const colunasBalancete: Column<BalanceteLinhaExpandida>[] = [
     {
       header: "Conta",
       accessor: "contactb",
-      width: "100px",
+      width: "80px",
       render: (row) => {
         const nivel = getNivel(row.classificacao);
         const fontWeight = nivel === 1 ? "bold" : "normal";
@@ -87,7 +83,7 @@ export function ConferenciaFiscalBP() {
       width: "auto",
       render: (row) => {
         const nivel = getNivel(row.classificacao);
-        const indentacao = (nivel - 1) * 10;
+        const indentacao = (nivel - 1) * 15;
         const fontWeight = nivel === 1 ? "bold" : "normal";
         return (
           <div style={{ paddingLeft: `${indentacao}px`, fontWeight }}>
@@ -97,68 +93,93 @@ export function ConferenciaFiscalBP() {
       },
     },
     {
-      header: "Valores Atuais",
-      align: "center",
+      header: "Real",
       columns: [
         {
           header: "Débito",
           accessor: "debito",
-          width: "150px",
-          render: (row) => {
-            const nivel = getNivel(row.classificacao);
-            const fontWeight = nivel === 1 ? "bold" : "normal";
-            return (
-              <span style={{ fontWeight }}>
-                <AnimatedValue value={Number(row.debito)} />
-              </span>
-            );
-          },
+          width: "130px",
+          render: (row) => (
+            <span style={{ fontWeight: 500, color: "#333333" }}>
+              <AnimatedValue value={Number(row.debito)} />
+            </span>
+          ),
         },
         {
           header: "Crédito",
           accessor: "credito",
-          width: "150px",
-          render: (row) => {
-            const nivel = getNivel(row.classificacao);
-            const fontWeight = nivel === 1 ? "bold" : "normal";
-            return (
-              <span style={{ fontWeight }}>
-                <AnimatedValue value={Number(row.credito)} />
-              </span>
-            );
-          },
+          width: "130px",
+          render: (row) => (
+            <span style={{ fontWeight: 500, color: "#333333" }}>
+              <AnimatedValue value={Number(row.credito)} />
+            </span>
+          ),
         },
       ],
     },
     {
-      header: "Valores Estimativos",
-      align: "center",
+      header: "Projeção",
       columns: [
         {
           header: "Débito",
-          accessor: "debito",
-          width: "150px",
+          accessor: "debitoFiscal",
+          width: "130px",
+          render: (row) => (
+            <span style={{ fontWeight: 500, color: "#666666" }}>
+              <AnimatedValue value={Number(row.debitoFiscal)} />
+            </span>
+          ),
+        },
+        {
+          header: "Crédito",
+          accessor: "creditoFiscal",
+          width: "130px",
+          render: (row) => (
+            <span style={{ fontWeight: 500, color: "#666666" }}>
+              <AnimatedValue value={Number(row.creditoFiscal)} />
+            </span>
+          ),
+        },
+      ],
+    },
+    {
+      header: "Divergência",
+      columns: [
+        {
+          header: "Débito",
+          align: "right",
+          width: "130px",
           render: (row) => {
-            const nivel = getNivel(row.classificacao);
-            const fontWeight = nivel === 1 ? "bold" : "normal";
+            const diff = row.debito - row.debitoFiscal;
+            if (Math.abs(diff) < 0.01)
+              return (
+                <div style={{ textAlign: "right", color: "#cccccc" }}>-</div>
+              );
             return (
-              <span style={{ fontWeight }}>
-                <AnimatedValue value={Number(row.debito)} />
-              </span>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ color: "#d32f2f", fontWeight: "600" }}>
+                  <AnimatedValue value={diff} />
+                </span>
+              </div>
             );
           },
         },
         {
           header: "Crédito",
-          accessor: "credito",
-          width: "150px",
+          align: "right",
+          width: "130px",
           render: (row) => {
-            const nivel = getNivel(row.classificacao);
-            const fontWeight = nivel === 1 ? "bold" : "normal";
+            const diff = row.credito - row.creditoFiscal;
+            if (Math.abs(diff) < 0.01)
+              return (
+                <div style={{ textAlign: "right", color: "#cccccc" }}>-</div>
+              );
             return (
-              <span style={{ fontWeight }}>
-                <AnimatedValue value={Number(row.credito)} />
-              </span>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ color: "#d32f2f", fontWeight: "600" }}>
+                  <AnimatedValue value={diff} />
+                </span>
+              </div>
             );
           },
         },
@@ -192,6 +213,29 @@ export function ConferenciaFiscalBP() {
     if (e.key === "Enter") buscarPorCodigo();
   };
 
+  const buscarPlano = async () => {
+    if (!formData.codPlano) return;
+    try {
+      const id = parseInt(formData.codPlano);
+      // @ts-ignore
+      const plano = await window.api.planos.obterPorId(id);
+      if (plano) {
+        // @ts-ignore
+        const nomeCorreto = plano.nome || plano.nome_plano || "Sem Nome";
+        setFormData((prev) => ({ ...prev, nomePlano: nomeCorreto }));
+      } else {
+        setFormData((prev) => ({ ...prev, nomePlano: "Plano não encontrado" }));
+      }
+    } catch (error) {
+      console.error("Erro ao buscar plano", error);
+      setFormData((prev) => ({ ...prev, nomePlano: "Erro na busca" }));
+    }
+  };
+
+  const handleKeyDownPlano = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") buscarPlano();
+  };
+
   const abrirModalPesquisa = async () => {
     setModalAberto(true);
     setCarregandoLista(true);
@@ -215,11 +259,59 @@ export function ConferenciaFiscalBP() {
     setModalAberto(false);
   };
 
+  const mesclarBalancetes = (
+    contabil: BalanceteLinha[],
+    fiscal: BalanceteLinha[],
+  ): BalanceteLinhaExpandida[] => {
+    const mapa = new Map<number, BalanceteLinhaExpandida>();
+
+    contabil.forEach((item) => {
+      mapa.set(item.contactb, {
+        ...item,
+        debitoFiscal: 0,
+        creditoFiscal: 0,
+      });
+    });
+
+    fiscal.forEach((item) => {
+      const existente = mapa.get(item.contactb);
+      if (existente) {
+        existente.debitoFiscal = item.debito;
+        existente.creditoFiscal = item.credito;
+      } else {
+        mapa.set(item.contactb, {
+          ...item,
+          debito: 0,
+          credito: 0,
+          debitoFiscal: item.debito,
+          creditoFiscal: item.credito,
+        });
+      }
+    });
+
+    const listaCombinada = Array.from(mapa.values());
+
+    return listaCombinada.sort((a, b) => {
+      const partesA = a.classificacao.split(".").map((p) => parseInt(p) || 0);
+      const partesB = b.classificacao.split(".").map((p) => parseInt(p) || 0);
+      const maxLength = Math.max(partesA.length, partesB.length);
+
+      for (let i = 0; i < maxLength; i++) {
+        const valorA = partesA[i] || 0;
+        const valorB = partesB[i] || 0;
+        if (valorA !== valorB) return valorA - valorB;
+      }
+      return 0;
+    });
+  };
+
   const processarBalancete = async () => {
-    if (!formData.codEmpresa) {
+    if (!formData.codEmpresa || !formData.dataInicial || !formData.dataFinal) {
       return;
     }
-    if (!formData.dataInicial || !formData.dataFinal) {
+
+    if (!formData.codPlano) {
+      alert("Informe o Código do Plano de Conciliação");
       return;
     }
 
@@ -230,17 +322,31 @@ export function ConferenciaFiscalBP() {
       const codigoEmpresa = parseInt(formData.codEmpresa);
       const dataInicio = new Date(formData.dataInicial + "T00:00:00");
       const dataFim = new Date(formData.dataFinal + "T23:59:59");
-      const origem = "FI";
+      const planoId = parseInt(formData.codPlano);
 
-      // @ts-ignore
-      const resultado = await window.api.gerarBalancoPatrimonial(
-        codigoEmpresa,
-        dataInicio,
-        dataFim,
-        origem
+      const [resultadoContabil, resultadoFiscal] = await Promise.all([
+        // @ts-ignore
+        window.api.gerarBalancoPatrimonial(
+          codigoEmpresa,
+          dataInicio,
+          dataFim,
+          "FI",
+        ),
+        // @ts-ignore
+        window.api.gerarBalanceteFiscal(
+          codigoEmpresa,
+          dataInicio,
+          dataFim,
+          planoId,
+        ),
+      ]);
+
+      const dadosMesclados = mesclarBalancetes(
+        resultadoContabil,
+        resultadoFiscal,
       );
 
-      setBalancete(resultado);
+      setBalancete(dadosMesclados);
     } catch (error) {
       console.error("Erro ao processar balancete:", error);
     } finally {
@@ -250,7 +356,7 @@ export function ConferenciaFiscalBP() {
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="page-container">
       <div className="form-section">
         <Title title="Conferência Fiscal | Balanço Patrimonial" />
 
@@ -270,7 +376,7 @@ export function ConferenciaFiscalBP() {
               <button
                 className="input-group-btn"
                 onClick={abrirModalPesquisa}
-                title="Pesquisar na Lista (F2)"
+                title="Pesquisar"
               >
                 <Search size={16} />
               </button>
@@ -279,10 +385,10 @@ export function ConferenciaFiscalBP() {
 
           <Input
             label="Nome da Empresa"
-            placeholder="Selecione a empresa..."
+            placeholder="Empresa..."
             value={formData.nomeEmpresa}
             disabled
-            style={{ fontWeight: "bold", color: "#334155" }}
+            style={{ fontWeight: "600", color: "#333333" }}
           />
         </div>
 
@@ -291,7 +397,7 @@ export function ConferenciaFiscalBP() {
             label="Data Inicial"
             type="date"
             name="dataInicial"
-            width="200px"
+            width="180px"
             value={formData.dataInicial}
             onChange={handleInputChange}
           />
@@ -299,35 +405,35 @@ export function ConferenciaFiscalBP() {
             label="Data Final"
             type="date"
             name="dataFinal"
-            width="200px"
+            width="180px"
             value={formData.dataFinal}
             onChange={handleInputChange}
           />
+
+          <div className="form-group" style={{ flex: "0 0 120px" }}>
+            <label className="form-label">Cód. Plano</label>
+            <input
+              name="codPlano"
+              className="form-input"
+              placeholder="ID"
+              value={formData.codPlano}
+              onChange={handleInputChange}
+              onBlur={buscarPlano}
+              onKeyDown={handleKeyDownPlano}
+            />
+          </div>
+
           <Input
-            label="Cód. Plano"
-            width="100px"
-            name="codPlano"
-            value={formData.codPlano}
-            onChange={handleInputChange}
-          />
-          <Select
-            label="Plano de Contas"
-            name="planoConta"
-            value={formData.planoConta}
-            onChange={handleInputChange}
-            options={[{ value: "1", label: "Modelo Padrão Questor" }]}
+            label="Nome do Plano"
+            name="nomePlano"
+            placeholder="Nome do Plano..."
+            value={formData.nomePlano}
+            disabled
+            style={{ fontWeight: "600", color: "#333333" }}
           />
         </div>
 
-        <div
-          style={{
-            marginTop: "24px",
-            display: "flex",
-            justifyContent: "flex-end",
-            borderTop: "1px solid var(--slate-100)",
-            paddingTop: "20px",
-          }}
-        >
+        <div className="form-actions">
           <button
             className="btn-primary"
             disabled={loading}
@@ -343,9 +449,10 @@ export function ConferenciaFiscalBP() {
       </div>
 
       {balancete.length > 0 && (
-        <div className="form-section" style={{ marginTop: "24px" }}>
-          <Title title="Balanço Patrimonial" />
-          <Table<BalanceteLinha>
+        <div className="form-section" style={{ marginTop: "20px" }}>
+          <Title title="Balanço patrimonial: contábil vs fiscal" />
+
+          <Table<BalanceteLinhaExpandida>
             data={balancete}
             columns={colunasBalancete}
             isLoading={carregandoBalancete}

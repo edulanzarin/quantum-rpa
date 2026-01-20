@@ -9,8 +9,9 @@ class NaturezaRepository {
      * Se passar termoBusca, filtra por código ou descrição.
      */
     async listarNaturezas(codigoEmpresa, termoBusca) {
+        // ADICIONADO "DISTINCT" PARA REMOVER DUPLICADAS
         let sql = `
-      SELECT
+      SELECT DISTINCT
         CODIGOEMPRESA,
         CODIGOCFOP,
         CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
@@ -19,9 +20,12 @@ class NaturezaRepository {
     `;
         const params = [codigoEmpresa];
         if (termoBusca) {
+            // Verifica se é número (busca exata ou inicio do código) ou texto
+            const termoNumerico = parseInt(termoBusca);
+            // Ajustei a lógica de busca para ser mais precisa
             sql += ` AND (CAST(CODIGOCFOP AS VARCHAR(10)) LIKE ? OR DESCRCFOP LIKE ?)`;
-            params.push(`%${termoBusca}%`);
-            params.push(`%${termoBusca}%`);
+            params.push(`${termoBusca}%`); // Código começa com...
+            params.push(`%${termoBusca}%`); // Descrição contém...
         }
         sql += ` ORDER BY CODIGOCFOP`;
         const dadosBrutos = (await (0, questorConnection_1.executeQuery)(sql, params));
@@ -35,8 +39,9 @@ class NaturezaRepository {
      * Busca uma única CFOP pelo código (útil para validar se o usuário digitar manual)
      */
     async obterPorCodigo(codigoEmpresa, codigoCfop) {
+        // ADICIONADO "DISTINCT" AQUI TAMBÉM POR SEGURANÇA
         const sql = `
-      SELECT
+      SELECT DISTINCT
         CODIGOEMPRESA,
         CODIGOCFOP,
         CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
