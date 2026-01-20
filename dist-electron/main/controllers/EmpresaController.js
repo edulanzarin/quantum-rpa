@@ -1,22 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmpresaController = void 0;
-const electron_1 = require("electron");
 const EmpresaService_1 = require("../services/EmpresaService");
-class EmpresaController {
+const BaseController_1 = require("./BaseController");
+class EmpresaController extends BaseController_1.BaseController {
     service;
-    constructor() {
-        this.service = new EmpresaService_1.EmpresaService();
+    constructor(service = new EmpresaService_1.EmpresaService()) {
+        super();
+        this.service = service;
     }
     registrarEventos() {
-        electron_1.ipcMain.handle("empresa:obterTodas", async () => {
-            try {
-                return await this.service.obterTodasEmpresas();
-            }
-            catch (error) {
-                console.error("Erro no Controller", error);
-                return [];
-            }
+        this.registrarHandler("empresa:obterTodas", async () => {
+            this.log("obterTodas");
+            return await this.service.obterTodasEmpresas();
         });
     }
 }

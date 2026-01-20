@@ -13,8 +13,11 @@ export default defineConfig({
       "@repositories": resolve(__dirname, "src/main/repositories"),
       "@controllers": resolve(__dirname, "src/main/controllers"),
       "@utils": resolve(__dirname, "src/main/utils"),
+      "@constants": resolve(__dirname, "src/main/constants"),
+      "@errors": resolve(__dirname, "src/main/errors"),
       "@components": resolve(__dirname, "./src/renderer/components"),
       "@pages": resolve(__dirname, "./src/renderer/pages"),
+      "@": resolve(__dirname, "./src/renderer"),
     },
   },
 });

@@ -1,13 +1,20 @@
 import { LancamentoContabilRepository } from "@repositories/LancamentoContabilRepository";
 import type { LancamentoContabil } from "@shared/types/LancamentoContabil";
 import type { MapaSaldoConta } from "@shared/types/MapaSaldoConta";
+import { BaseService } from "./BaseService";
+import { adicionarSaldoConta } from "@utils/contabilidade.utils";
+import {
+  validarNumeroPositivo,
+  validarIntervaloDatas,
+} from "@utils/validation.utils";
 
-export class LancamentoContabilService {
-  private repository = new LancamentoContabilRepository();
+export class LancamentoContabilService extends BaseService {
+  constructor(private repository = new LancamentoContabilRepository()) {
+    super();
+  }
 
   /**
-   * Obtém os lançamentos contábeis de determinada
-   * origem e intervalo entre datas.
+   * Obtém lançamentos contábeis por origem e período.
    */
   async obterLancamentosContabeisPorOrigem(
     codigoEmpresa: number,
@@ -15,7 +22,17 @@ export class LancamentoContabilService {
     dataFim: Date,
     origem: string,
   ): Promise<LancamentoContabil[]> {
-    return this.repository.obterLancamentosContabeisPorOrigem(
+    validarNumeroPositivo(codigoEmpresa, "Código da empresa");
+    validarIntervaloDatas(dataInicio, dataFim);
+
+    this.log("obterLancamentosContabeisPorOrigem", {
+      codigoEmpresa,
+      dataInicio,
+      dataFim,
+      origem,
+    });
+
+    return await this.repository.obterLancamentosContabeisPorOrigem(
       codigoEmpresa,
       dataInicio,
       dataFim,
@@ -24,36 +41,22 @@ export class LancamentoContabilService {
   }
 
   /**
-   * Soma os lançamentos contábeis puramente pelo ID da conta (CONTACTB).
-   * Não realiza lógica de classificação ou hierarquia aqui.
+   * Soma lançamentos por conta (CONTACTB).
+   * Não aplica lógica hierárquica - apenas agrupa por ID.
    */
   somarPorConta(lancamentos: LancamentoContabil[]): MapaSaldoConta {
-    const saldos = new Map<number, { debito: number; credito: number }>();
+    const saldos: MapaSaldoConta = new Map();
 
     for (const lanc of lancamentos) {
       if (lanc.CONTACTBDEB) {
-        this.somar(saldos, lanc.CONTACTBDEB, lanc.VALORLCTOCTB, 0);
+        adicionarSaldoConta(saldos, lanc.CONTACTBDEB, lanc.VALORLCTOCTB, "D");
       }
 
       if (lanc.CONTACTBCRED) {
-        this.somar(saldos, lanc.CONTACTBCRED, 0, lanc.VALORLCTOCTB);
+        adicionarSaldoConta(saldos, lanc.CONTACTBCRED, lanc.VALORLCTOCTB, "C");
       }
     }
 
     return saldos;
-  }
-
-  private somar(
-    mapa: Map<number, { debito: number; credito: number }>,
-    conta: number,
-    debito: number,
-    credito: number,
-  ): void {
-    const atual = mapa.get(conta) ?? { debito: 0, credito: 0 };
-
-    mapa.set(conta, {
-      debito: atual.debito + debito,
-      credito: atual.credito + credito,
-    });
   }
 }

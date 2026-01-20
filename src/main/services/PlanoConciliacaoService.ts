@@ -1,54 +1,58 @@
-import { PlanoConciliacaoRepository } from "../repositories/PlanoConciliacaoRepository";
+import { PlanoConciliacaoRepository } from "@repositories/PlanoConciliacaoRepository";
 import type { PlanoConciliacao } from "@shared/types/PlanoConciliacao";
+import { BaseService } from "./BaseService";
+import { ValidationError } from "@errors";
 
-export class PlanoConciliacaoService {
-  private repository = new PlanoConciliacaoRepository();
+export class PlanoConciliacaoService extends BaseService {
+  constructor(private repository = new PlanoConciliacaoRepository()) {
+    super();
+  }
 
   /**
-   * Salva um plano de conciliação.
-   * * Lógica aplicada:
-   * 1. Valida campos obrigatórios.
-   * 2. Se for edição: Atualiza nome e REFAZ os itens (Delete + Insert).
-   * 3. Se for criação: Gera o ID e insere os itens.
+   * Salva um plano de conciliação (criação ou atualização).
+   *
+   * Fluxo:
+   * 1. Valida dados obrigatórios
+   * 2. Se for edição: atualiza nome e refaz itens
+   * 3. Se for criação: cria novo plano e insere itens
    */
   async salvarPlano(plano: PlanoConciliacao): Promise<number> {
-    if (!plano.nome || plano.nome.trim() === "") {
-      throw new Error("O nome do plano é obrigatório.");
-    }
+    this.validarPlano(plano);
 
-    if (!plano.itens || plano.itens.length === 0) {
-      throw new Error("O plano precisa ter pelo menos um item configurado.");
-    }
+    this.log("salvarPlano", {
+      id: plano.id,
+      nome: plano.nome,
+      qtdItens: plano.itens?.length,
+    });
 
     let idPlano = plano.id;
 
     if (idPlano) {
+      // Atualização
       await this.repository.atualizarNomePlano(idPlano, plano.nome);
-
       await this.repository.excluirItensDoPlano(idPlano);
     } else {
+      // Criação
       idPlano = await this.repository.criarPlano(plano.nome);
     }
 
-    const promessasItens = plano.itens.map((item) => {
-      return this.repository.adicionarItem({
-        ...item,
-        planoId: idPlano,
-      });
-    });
+    // Insere todos os itens
+    await this.salvarItens(idPlano, plano.itens!);
 
-    await Promise.all(promessasItens);
+    this.log(`Plano ${idPlano} salvo com sucesso`);
 
-    return idPlano!;
+    return idPlano;
   }
 
   /**
-   * Carrega o plano completo (Cabeçalho + Itens) para edição.
-   * Útil para preencher o formulário quando o usuário clica em "Editar".
+   * Obtém plano completo com todos os itens.
    */
   async obterPlanoCompleto(id: number): Promise<PlanoConciliacao | null> {
     const header = await this.repository.obterPlanoPorId(id);
-    if (!header) return null;
+
+    if (!header) {
+      return null;
+    }
 
     const itens = await this.repository.obterItensPorPlano(id);
 
@@ -56,15 +60,43 @@ export class PlanoConciliacaoService {
       id: header.id,
       nome: header.nome_plano,
       ativo: header.ativo === 1,
-      itens: itens,
+      itens,
     };
   }
 
   /**
-   * Retorna apenas a lista de cabeçalhos dos planos.
-   * Útil para listar em Grids ou Selects onde não precisamos dos detalhes dos itens.
+   * Lista todos os planos (apenas cabeçalhos).
    */
   async listarTodosPlanos() {
     return await this.repository.listarTodosPlanos();
+  }
+
+  /**
+   * Valida dados do plano antes de salvar.
+   */
+  private validarPlano(plano: PlanoConciliacao): void {
+    if (!plano.nome || plano.nome.trim() === "") {
+      throw new ValidationError("O nome do plano é obrigatório");
+    }
+
+    if (!plano.itens || plano.itens.length === 0) {
+      throw new ValidationError(
+        "O plano precisa ter pelo menos um item configurado",
+      );
+    }
+  }
+
+  /**
+   * Salva todos os itens de um plano em paralelo.
+   */
+  private async salvarItens(planoId: number, itens: any[]): Promise<void> {
+    const promessas = itens.map((item) =>
+      this.repository.adicionarItem({
+        ...item,
+        planoId,
+      }),
+    );
+
+    await Promise.all(promessas);
   }
 }

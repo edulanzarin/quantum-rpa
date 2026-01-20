@@ -1,21 +1,15 @@
-import { ipcMain } from "electron";
 import { EmpresaService } from "@services/EmpresaService";
+import { BaseController } from "./BaseController";
 
-export class EmpresaController {
-  private service: EmpresaService;
-
-  constructor() {
-    this.service = new EmpresaService();
+export class EmpresaController extends BaseController {
+  constructor(private service = new EmpresaService()) {
+    super();
   }
 
-  registrarEventos() {
-    ipcMain.handle("empresa:obterTodas", async () => {
-      try {
-        return await this.service.obterTodasEmpresas();
-      } catch (error) {
-        console.error("Erro no Controller", error);
-        return [];
-      }
+  registrarEventos(): void {
+    this.registrarHandler("empresa:obterTodas", async () => {
+      this.log("obterTodas");
+      return await this.service.obterTodasEmpresas();
     });
   }
 }

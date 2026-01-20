@@ -1,19 +1,13 @@
-import { ipcMain } from "electron";
 import { BalanceteContabilService } from "@services/BalanceteContabilService";
+import { BaseController } from "./BaseController";
 
-export class BalanceteContabilController {
-  private service: BalanceteContabilService;
-
-  constructor() {
-    this.service = new BalanceteContabilService();
+export class BalanceteContabilController extends BaseController {
+  constructor(private service = new BalanceteContabilService()) {
+    super();
   }
 
-  registrarEventos() {
-    /**
-     * Gera o balancete contábil de uma empresa
-     * para um período e origem específicos.
-     */
-    ipcMain.handle(
+  registrarEventos(): void {
+    this.registrarHandler(
       "balancete:gerarBalancoPatrimonial",
       async (
         _event,
@@ -22,17 +16,19 @@ export class BalanceteContabilController {
         dataFim: Date,
         origem: string,
       ) => {
-        try {
-          return await this.service.gerarBalancoPatrimonial(
-            codigoEmpresa,
-            dataInicio,
-            dataFim,
-            origem,
-          );
-        } catch (error) {
-          console.error("Erro ao gerar balancete", error);
-          return [];
-        }
+        this.log("gerarBalancoPatrimonial", {
+          codigoEmpresa,
+          dataInicio,
+          dataFim,
+          origem,
+        });
+
+        return await this.service.gerarBalancoPatrimonial(
+          codigoEmpresa,
+          new Date(dataInicio),
+          new Date(dataFim),
+          origem,
+        );
       },
     );
   }

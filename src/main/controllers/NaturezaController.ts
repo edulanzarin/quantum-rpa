@@ -1,22 +1,26 @@
-import { ipcMain } from "electron";
-import { NaturezaService } from "../services/NaturezaService";
+import { NaturezaService } from "@services/NaturezaService";
+import { BaseController } from "./BaseController";
 
-export class NaturezaController {
-  private service = new NaturezaService();
+export class NaturezaController extends BaseController {
+  constructor(private service = new NaturezaService()) {
+    super();
+  }
 
-  registrarEventos() {
-    ipcMain.handle(
+  registrarEventos(): void {
+    this.registrarHandler(
       "natureza:listar",
-      async (_, codigoEmpresa: number, termo?: string) => {
+      async (_event, codigoEmpresa: number, termo?: string) => {
+        this.log("listar", { codigoEmpresa, termo });
         return await this.service.listar(codigoEmpresa, termo);
-      }
+      },
     );
 
-    ipcMain.handle(
+    this.registrarHandler(
       "natureza:buscarPorCodigo",
-      async (_, codigoEmpresa: number, cfop: number) => {
+      async (_event, codigoEmpresa: number, cfop: number) => {
+        this.log("buscarPorCodigo", { codigoEmpresa, cfop });
         return await this.service.buscarPeloCodigo(codigoEmpresa, cfop);
-      }
+      },
     );
   }
 }

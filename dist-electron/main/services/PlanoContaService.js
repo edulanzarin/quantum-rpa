@@ -2,16 +2,24 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlanoContaService = void 0;
 const PlanoContaRepository_1 = require("../repositories/PlanoContaRepository");
-class PlanoContaService {
-    repository = new PlanoContaRepository_1.PlanoContaRepository();
+const contabilidade_utils_1 = require("../utils/contabilidade.utils");
+const BaseService_1 = require("./BaseService");
+const validation_utils_1 = require("../utils/validation.utils");
+class PlanoContaService extends BaseService_1.BaseService {
+    repository;
+    constructor(repository = new PlanoContaRepository_1.PlanoContaRepository()) {
+        super();
+        this.repository = repository;
+    }
     /**
-     * Obtém o plano de contas de uma empresa e retorna a estrutura
-     * hierárquica já processada em formato de árvore.
+     * Obtém o plano de contas processado de uma empresa.
      *
-     * Mescla contas do PLANOPADRAO (padrão do sistema) com PLANOESPEC (específicas da empresa).
-     * Se uma conta existe em ambas as tabelas, a versão do PLANOESPEC prevalece.
+     * Mescla PLANOPADRAO (sistema) com PLANOESPEC (específicas),
+     * prevalecendo as específicas em caso de conflito.
      */
     async obterPlanoProcessado(codigoEmpresa) {
+        (0, validation_utils_1.validarNumeroPositivo)(codigoEmpresa, "Código da empresa");
+        this.log("obterPlanoProcessado", { codigoEmpresa });
         const [contasPadrao, contasEspecificas] = await Promise.all([
             this.repository.obterPlanoPadrao(),
             this.repository.obterPlanoEspecifico(codigoEmpresa),
@@ -20,12 +28,8 @@ class PlanoContaService {
         return this.montarArvore(contasMescladas);
     }
     /**
-     * Mescla contas padrão com contas específicas.
-     *
-     * Regras:
-     * - Contas do PLANOESPEC sobrescrevem contas do PLANOPADRAO (mesmo CONTACTB)
-     * - Todas as contas padrão que não foram sobrescritas são incluídas
-     * - Resultado final ordenado por CLASSIFCONTA
+     * Mescla contas padrão com específicas.
+     * Contas específicas sobrescrevem as padrão (mesmo CONTACTB).
      */
     mesclarContas(contasPadrao, contasEspecificas, codigoEmpresa) {
         const mapa = new Map();
@@ -39,35 +43,23 @@ class PlanoContaService {
             mapa.set(conta.CONTACTB, conta);
         }
         const resultado = Array.from(mapa.values());
-        resultado.sort((a, b) => this.compararClassificacao(a.CLASSIFCONTA, b.CLASSIFCONTA));
+        resultado.sort((a, b) => (0, contabilidade_utils_1.compararClassificacao)(a.CLASSIFCONTA, b.CLASSIFCONTA));
         return resultado;
     }
     /**
-     * Constrói a árvore do plano de contas a partir de uma lista plana.
+     * Constrói árvore hierárquica do plano de contas.
      *
-     * IMPORTANTE: Múltiplas contas podem ter a mesma CLASSIFCONTA,
-     * por isso usamos CONTACTB como chave única.
-     *
-     * A relação pai-filho busca o ancestral mais próximo que existe:
-     * - Se existe 1.01.02.04.05 mas não existe 1.01.02.04, busca 1.01.02
-     * - Se 1.01.02 não existe, busca 1.01
-     * - E assim por diante até encontrar ou virar raiz
-     *
-     * Exemplo:
-     * - 1           → raiz
-     * - 1.1         → filho de 1
-     * - 1.1.01      → filho de 1.1
-     * - 1.1.01.001  → filho de 1.1.01 (se existir) ou 1.1.01 ou 1.1 ou 1
+     * Utiliza CONTACTB como chave única (múltiplas contas podem ter mesma CLASSIFCONTA).
+     * Busca ancestral mais próximo existente na hierarquia.
      */
     montarArvore(contas) {
         const mapaPorContactb = new Map();
         const mapaPorClassif = new Map();
         const raizes = [];
         for (const conta of contas) {
-            const nivel = conta.CLASSIFCONTA.split(".").length;
             const node = {
                 ...conta,
-                nivel,
+                nivel: (0, contabilidade_utils_1.calcularNivel)(conta.CLASSIFCONTA),
                 filhos: [],
             };
             mapaPorContactb.set(conta.CONTACTB, node);
@@ -81,15 +73,7 @@ class PlanoContaService {
                 raizes.push(node);
                 continue;
             }
-            let pai;
-            for (let i = partes.length - 1; i > 0; i--) {
-                const classifPai = partes.slice(0, i).join(".");
-                const candidatos = mapaPorClassif.get(classifPai);
-                if (candidatos && candidatos.length > 0) {
-                    pai = candidatos[0];
-                    break;
-                }
-            }
+            const pai = this.buscarPaiMaisProximo(partes, mapaPorClassif);
             if (pai) {
                 node.pai = pai;
                 pai.filhos.push(node);
@@ -101,21 +85,18 @@ class PlanoContaService {
         return raizes;
     }
     /**
-     * Compara duas classificações contábeis para ordenação.
-     * Exemplo: "1" < "1.1" < "1.1.001" < "1.2" < "2" < "2.1"
+     * Busca o pai mais próximo na hierarquia.
+     * Tenta classificações progressivamente mais curtas até encontrar.
      */
-    compararClassificacao(a, b) {
-        const partesA = a.split(".").map((p) => parseInt(p) || 0);
-        const partesB = b.split(".").map((p) => parseInt(p) || 0);
-        const maxLength = Math.max(partesA.length, partesB.length);
-        for (let i = 0; i < maxLength; i++) {
-            const valorA = partesA[i] || 0;
-            const valorB = partesB[i] || 0;
-            if (valorA !== valorB) {
-                return valorA - valorB;
+    buscarPaiMaisProximo(partes, mapaPorClassif) {
+        for (let i = partes.length - 1; i > 0; i--) {
+            const classifPai = partes.slice(0, i).join(".");
+            const candidatos = mapaPorClassif.get(classifPai);
+            if (candidatos && candidatos.length > 0) {
+                return candidatos[0];
             }
         }
-        return 0;
+        return undefined;
     }
 }
 exports.PlanoContaService = PlanoContaService;

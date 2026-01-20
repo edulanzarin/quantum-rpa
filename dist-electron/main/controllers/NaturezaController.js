@@ -1,15 +1,21 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NaturezaController = void 0;
-const electron_1 = require("electron");
 const NaturezaService_1 = require("../services/NaturezaService");
-class NaturezaController {
-    service = new NaturezaService_1.NaturezaService();
+const BaseController_1 = require("./BaseController");
+class NaturezaController extends BaseController_1.BaseController {
+    service;
+    constructor(service = new NaturezaService_1.NaturezaService()) {
+        super();
+        this.service = service;
+    }
     registrarEventos() {
-        electron_1.ipcMain.handle("natureza:listar", async (_, codigoEmpresa, termo) => {
+        this.registrarHandler("natureza:listar", async (_event, codigoEmpresa, termo) => {
+            this.log("listar", { codigoEmpresa, termo });
             return await this.service.listar(codigoEmpresa, termo);
         });
-        electron_1.ipcMain.handle("natureza:buscarPorCodigo", async (_, codigoEmpresa, cfop) => {
+        this.registrarHandler("natureza:buscarPorCodigo", async (_event, codigoEmpresa, cfop) => {
+            this.log("buscarPorCodigo", { codigoEmpresa, cfop });
             return await this.service.buscarPeloCodigo(codigoEmpresa, cfop);
         });
     }

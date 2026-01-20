@@ -2,7 +2,9 @@ import "module-alias/register";
 
 import { app, BrowserWindow } from "electron";
 import path from "path";
-import { testarConexao } from "./database/questorConnection";
+import { testarConexao as testarConexaoQuestor } from "@database/questorConnection";
+import localConnection from "@database/localConnection";
+import { PlanoConciliacaoRepository } from "@repositories/PlanoConciliacaoRepository";
 import { registrarTodosEventos } from "./controllers";
 
 let mainWindow: BrowserWindow | null = null;
@@ -27,20 +29,71 @@ const createWindow = () => {
   }
 };
 
+/**
+ * Inicializa conexões com bancos de dados.
+ */
+async function inicializarBancos(): Promise<void> {
+  console.log("🔌 Testando conexões com bancos de dados...");
+
+  // Testa conexão com Questor (Firebird)
+  const questorOk = await testarConexaoQuestor();
+
+  // Testa conexão com MySQL local
+  const mysqlOk = await localConnection.testarConexao();
+
+  if (!questorOk) {
+    console.warn(
+      "⚠️  Questor indisponível. Algumas funcionalidades podem não funcionar.",
+    );
+  }
+
+  if (!mysqlOk) {
+    console.warn(
+      "⚠️  MySQL indisponível. Planos de conciliação podem não funcionar.",
+    );
+  }
+
+  // Inicializa tabelas do banco local
+  if (mysqlOk) {
+    try {
+      await PlanoConciliacaoRepository.inicializarTabelas();
+    } catch (error) {
+      console.error("❌ Erro ao inicializar tabelas:", error);
+    }
+  }
+}
+
 app.whenReady().then(async () => {
   console.log("🚀 Iniciando Quantum RPA...");
 
-  await testarConexao();
+  // Inicializa bancos
+  await inicializarBancos();
 
+  // Registra handlers IPC
   registrarTodosEventos();
 
+  // Cria janela
   createWindow();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
   });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+// Cleanup ao fechar
+app.on("before-quit", async () => {
+  console.log("🔌 Fechando conexões...");
+  try {
+    await localConnection.fecharConexao();
+  } catch (error) {
+    console.error("Erro ao fechar conexões:", error);
+  }
 });

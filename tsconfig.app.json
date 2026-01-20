@@ -20,7 +20,10 @@
     "paths": {
       "@components/*": ["renderer/components/*"],
       "@pages/*": ["renderer/pages/*"],
-      "@shared/*": ["shared/*"]
+      "@shared/*": ["shared/*"],
+      "@/*": ["renderer/*"],
+      "@/contexts/*": ["renderer/contexts/*"],
+      "@/hooks/*": ["renderer/hooks/*"]
     },
 
     "strict": true,
@@ -32,13 +35,6 @@
   "include": [
     "src/renderer/**/*",
     "src/shared/**/*",
-    "src/shared/types/MapaSaldoConta.ts",
-    "src/shared/types/PlanoContaNode.ts",
-    "src/main/services/EmpresaService.ts",
-    "src/main/services/BalanceteContabilService.ts",
-    "src/main/services/LancamentoContabilService.ts",
-    "src/main/services/PlanoConciliacaoService.ts",
-    "src/main/services/NaturezaService.ts",
-    "src/main/services/PlanoContaService.ts"
+    "src/renderer/types/electron.d.ts"
   ]
 }

@@ -52,6 +52,8 @@
     "@services": "dist-electron/main/services",
     "@repositories": "dist-electron/main/repositories",
     "@controllers": "dist-electron/main/controllers",
-    "@utils": "dist-electron/main/utils"
+    "@utils": "dist-electron/main/utils",
+    "@constants": "dist-electron/main/constants",
+    "@errors": "dist-electron/main/errors"
   }
 }

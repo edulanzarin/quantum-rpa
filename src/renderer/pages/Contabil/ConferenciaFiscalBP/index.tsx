@@ -1,10 +1,12 @@
-import React, { useState, useEffect, type KeyboardEvent } from "react";
+import { useState, useEffect, type ChangeEvent } from "react";
 import { Search, Loader2 } from "lucide-react";
 import { Input } from "@components/ui/Input";
 import { Title } from "@components/ui/Title";
 import { Modal } from "@components/ui/Modal";
 import { Table, type Column } from "@components/ui/Table";
 import type { Empresa, BalanceteLinha } from "@shared/types";
+import { unwrap } from "@/utils/api-helper";
+import { useToast } from "@/hooks/useToast";
 import "../styles.css";
 
 interface BalanceteLinhaExpandida extends BalanceteLinha {
@@ -40,6 +42,8 @@ function AnimatedValue({ value }: { value: number }) {
 }
 
 export function ConferenciaFiscalBP() {
+  const toast = useToast();
+
   const [formData, setFormData] = useState({
     codEmpresa: "",
     nomeEmpresa: "",
@@ -187,63 +191,71 @@ export function ConferenciaFiscalBP() {
     },
   ];
 
-  const handleInputChange = (e: any) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const buscarPorCodigo = async () => {
     if (!formData.codEmpresa) return;
+
     try {
-      // @ts-ignore
-      const todas: Empresa[] = await window.api.obterEmpresas();
+      const todas = await unwrap(window.api.obterEmpresas());
       const codigo = parseInt(formData.codEmpresa);
       const encontrada = todas.find((e) => e.CODIGO === codigo);
+
       if (encontrada) {
         setFormData((prev) => ({ ...prev, nomeEmpresa: encontrada.NOME }));
       } else {
         setFormData((prev) => ({ ...prev, nomeEmpresa: "" }));
+        toast.warning("Empresa não encontrada");
       }
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao buscar empresa:", error);
+      toast.error("Erro ao buscar empresa");
+      setFormData((prev) => ({ ...prev, nomeEmpresa: "" }));
     }
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") buscarPorCodigo();
   };
 
   const buscarPlano = async () => {
     if (!formData.codPlano) return;
+
     try {
       const id = parseInt(formData.codPlano);
-      // @ts-ignore
-      const plano = await window.api.planos.obterPorId(id);
+      const plano = await unwrap(window.api.planos.obterPorId(id));
+
       if (plano) {
-        // @ts-ignore
-        const nomeCorreto = plano.nome || plano.nome_plano || "Sem Nome";
+        const nomeCorreto = plano.nome || "Sem Nome";
         setFormData((prev) => ({ ...prev, nomePlano: nomeCorreto }));
       } else {
         setFormData((prev) => ({ ...prev, nomePlano: "Plano não encontrado" }));
+        toast.warning("Plano não encontrado");
       }
     } catch (error) {
-      console.error("Erro ao buscar plano", error);
+      console.error("Erro ao buscar plano:", error);
+      toast.error("Erro ao buscar plano");
       setFormData((prev) => ({ ...prev, nomePlano: "Erro na busca" }));
     }
   };
 
-  const handleKeyDownPlano = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDownPlano = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") buscarPlano();
   };
 
   const abrirModalPesquisa = async () => {
     setModalAberto(true);
     setCarregandoLista(true);
+
     try {
-      // @ts-ignore
-      const dados = await window.api.obterEmpresas();
+      const dados = await unwrap(window.api.obterEmpresas());
       setListaEmpresas(dados);
     } catch (error) {
+      console.error("Erro ao carregar empresas:", error);
+      toast.error("Erro ao carregar lista de empresas");
       setModalAberto(false);
     } finally {
       setCarregandoLista(false);
@@ -306,12 +318,14 @@ export function ConferenciaFiscalBP() {
   };
 
   const processarBalancete = async () => {
+    // Validações
     if (!formData.codEmpresa || !formData.dataInicial || !formData.dataFinal) {
+      toast.warning("Por favor, preencha todos os campos obrigatórios");
       return;
     }
 
     if (!formData.codPlano) {
-      alert("Informe o Código do Plano de Conciliação");
+      toast.warning("Informe o Código do Plano de Conciliação");
       return;
     }
 
@@ -325,19 +339,21 @@ export function ConferenciaFiscalBP() {
       const planoId = parseInt(formData.codPlano);
 
       const [resultadoContabil, resultadoFiscal] = await Promise.all([
-        // @ts-ignore
-        window.api.gerarBalancoPatrimonial(
-          codigoEmpresa,
-          dataInicio,
-          dataFim,
-          "FI",
+        unwrap(
+          window.api.gerarBalancoPatrimonial(
+            codigoEmpresa,
+            dataInicio,
+            dataFim,
+            "FI",
+          ),
         ),
-        // @ts-ignore
-        window.api.gerarBalanceteFiscal(
-          codigoEmpresa,
-          dataInicio,
-          dataFim,
-          planoId,
+        unwrap(
+          window.api.gerarBalanceteFiscal(
+            codigoEmpresa,
+            dataInicio,
+            dataFim,
+            planoId,
+          ),
         ),
       ]);
 
@@ -347,8 +363,12 @@ export function ConferenciaFiscalBP() {
       );
 
       setBalancete(dadosMesclados);
+      toast.success("Balancete processado com sucesso!");
     } catch (error) {
       console.error("Erro ao processar balancete:", error);
+      toast.error(
+        "Erro ao processar balancete. Verifique o console para mais detalhes.",
+      );
     } finally {
       setLoading(false);
       setCarregandoBalancete(false);
@@ -470,8 +490,8 @@ export function ConferenciaFiscalBP() {
           data={listaEmpresas}
           columns={colunasEmpresa}
           onRowClick={selecionarEmpresaNoModal}
-          isLoading={carregandoLista}
           enableSearch={true}
+          maxHeight="500px" // ← Sem adaptiveHeight = comportamento atual
         />
       </Modal>
     </div>

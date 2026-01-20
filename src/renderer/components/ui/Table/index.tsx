@@ -18,6 +18,10 @@ interface TableProps<T> {
   onRowClick?: (item: T) => void;
   enableSearch?: boolean;
   isLoading?: boolean;
+  maxHeight?: string;
+  minHeight?: string; // ← NOVO
+  adaptiveHeight?: boolean; // ← NOVO
+  heightOffset?: string; // ← NOVO
 }
 
 export function Table<T extends { [key: string]: any }>({
@@ -26,8 +30,27 @@ export function Table<T extends { [key: string]: any }>({
   onRowClick,
   enableSearch = true,
   isLoading = false,
+  maxHeight,
+  minHeight = "300px",
+  adaptiveHeight = false,
+  heightOffset = "0px",
 }: TableProps<T>) {
   const [searchTerm, setSearchTerm] = useState("");
+
+  const tableWrapperStyle = useMemo((): React.CSSProperties => {
+    if (adaptiveHeight) {
+      return {
+        maxHeight: maxHeight,
+        minHeight: minHeight,
+        height: `calc(100vh - ${heightOffset})`,
+        overflowY: "auto",
+      };
+    }
+    return {
+      maxHeight: maxHeight || "none",
+      overflowY: maxHeight ? "auto" : "visible",
+    };
+  }, [adaptiveHeight, maxHeight, minHeight, heightOffset]);
 
   const flatColumns = useMemo(() => {
     return columns.flatMap((col) => col.columns || col);
@@ -57,7 +80,7 @@ export function Table<T extends { [key: string]: any }>({
         </div>
       )}
 
-      <div className="table-wrapper">
+      <div className="table-wrapper" style={tableWrapperStyle}>
         <table className="ui-table">
           <thead>
             <tr>
@@ -113,10 +136,10 @@ export function Table<T extends { [key: string]: any }>({
                       {col.render
                         ? col.render(row, rowIndex)
                         : col.accessor && col.format
-                        ? col.format(row[col.accessor])
-                        : col.accessor
-                        ? row[col.accessor]
-                        : null}
+                          ? col.format(row[col.accessor])
+                          : col.accessor
+                            ? row[col.accessor]
+                            : null}
                     </td>
                   ))}
                 </tr>

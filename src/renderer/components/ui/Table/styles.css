@@ -8,8 +8,9 @@
 .table-wrapper {
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  overflow: hidden;
+  overflow-x: auto; /* Scroll horizontal sempre ativo */
   background: #ffffff;
+  /* overflow-y será controlado por inline style baseado em maxHeight */
 }
 
 .ui-table {
@@ -26,7 +27,8 @@
   background-color: #f8f8f8;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 10; /* Aumentei para garantir que fique sobre o conteúdo */
+  box-shadow: 0 1px 0 0 #e0e0e0; /* Sombra sutil quando scrollar */
 }
 
 .ui-table th {
@@ -39,6 +41,7 @@
   letter-spacing: 0.3px;
   border-bottom: 1px solid #e0e0e0;
   white-space: nowrap;
+  background-color: #f8f8f8; /* Garante fundo opaco no sticky */
 }
 
 .ui-table tbody tr {

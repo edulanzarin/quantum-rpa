@@ -1,237 +1,221 @@
-import { PlanoContaService } from "@services/PlanoContaService";
-import { LancamentoFiscalEntradaService } from "@services/LancamentoFiscalEntradaService";
+import { PlanoContaService } from "./PlanoContaService";
+import { LancamentoFiscalEntradaService } from "./LancamentoFiscalEntradaService";
 import { PlanoConciliacaoRepository } from "@repositories/PlanoConciliacaoRepository";
-import type { PlanoContaNode } from "@shared/types/PlanoContaNode";
 import type { BalanceteLinha } from "@shared/types/BalanceteLinha";
 import type { ItemPlanoConciliacao } from "@shared/types/ItemPlanoConciliacao";
+import type { MapaSaldoConta } from "@shared/types/MapaSaldoConta";
+import { BaseService } from "./BaseService";
+import {
+  acumularSaldosHierarquicos,
+  filtrarContasPatrimoniais,
+  filtrarLinhasComSaldo,
+  ordenarBalancete,
+} from "@utils/contabilidade.utils";
+import { calcularRateioImpostos } from "@utils/fiscal.utils";
+import { adicionarSaldoConta } from "@utils/contabilidade.utils";
+import { CONTAS_SISTEMA, NIVEIS_RELATORIO } from "@constants";
+import {
+  validarNumeroPositivo,
+  validarIntervaloDatas,
+} from "@utils/validation.utils";
 
-export class BalanceteFiscalService {
-  private planoContaService = new PlanoContaService();
-  private fiscalService = new LancamentoFiscalEntradaService();
-  private planoConciliacaoRepo = new PlanoConciliacaoRepository();
+export class BalanceteFiscalService extends BaseService {
+  constructor(
+    private planoContaService = new PlanoContaService(),
+    private fiscalService = new LancamentoFiscalEntradaService(),
+    private planoConciliacaoRepo = new PlanoConciliacaoRepository(),
+  ) {
+    super();
+  }
 
+  /**
+   * Gera projeção do balanço patrimonial baseado em notas fiscais.
+   * Aplica regras de conciliação fiscal definidas no plano.
+   */
   async gerarBalancoPatrimonialFiscal(
     codigoEmpresa: number,
     dataInicio: Date,
     dataFim: Date,
     planoConciliacaoId: number,
   ): Promise<BalanceteLinha[]> {
-    const arvorePlanoContas =
-      await this.planoContaService.obterPlanoProcessado(codigoEmpresa);
+    // Validações
+    validarNumeroPositivo(codigoEmpresa, "Código da empresa");
+    validarNumeroPositivo(planoConciliacaoId, "ID do plano de conciliação");
+    validarIntervaloDatas(dataInicio, dataFim);
 
-    const notas = await this.fiscalService.buscarLancamentosFiscais(
+    this.log("gerarBalancoPatrimonialFiscal", {
       codigoEmpresa,
       dataInicio,
       dataFim,
-    );
+      planoConciliacaoId,
+    });
 
-    const regrasItens =
-      await this.planoConciliacaoRepo.obterItensPorPlano(planoConciliacaoId);
+    // Busca dados necessários
+    const [arvorePlanoContas, notas, regrasItens] = await Promise.all([
+      this.planoContaService.obterPlanoProcessado(codigoEmpresa),
+      this.fiscalService.buscarLancamentosFiscais(
+        codigoEmpresa,
+        dataInicio,
+        dataFim,
+      ),
+      this.planoConciliacaoRepo.obterItensPorPlano(planoConciliacaoId),
+    ]);
 
-    const mapaRegras = new Map<number, ItemPlanoConciliacao>();
-    regrasItens.forEach((r) => mapaRegras.set(r.cfop, r));
+    // Indexa regras por CFOP para acesso O(1)
+    const mapaRegras = this.indexarRegrasPorCfop(regrasItens);
 
-    const saldosProjetados = new Map<
-      number,
-      { debito: number; credito: number }
-    >();
+    // Calcula saldos projetados
+    const saldosProjetados = this.calcularSaldosProjetados(notas, mapaRegras);
 
-    const CONTA_RETIDOS = 1539;
+    // Gera balancete
+    return this.gerarBalancete(arvorePlanoContas, saldosProjetados);
+  }
 
-    // Contas de Recuperar (Pode ajustar os IDs conforme seu plano)
-    const CONTA_ICMS_RECUPERAR = 200;
-    const CONTA_IPI_RECUPERAR = 221; // Ou 158
-    const CONTA_PIS_RECUPERAR = 158; // Ou conta específica de PIS
-    const CONTA_COFINS_RECUPERAR = 159; // Ou conta específica de COFINS
+  /**
+   * Indexa regras de conciliação por CFOP para busca rápida.
+   */
+  private indexarRegrasPorCfop(
+    regras: ItemPlanoConciliacao[],
+  ): Map<number, ItemPlanoConciliacao> {
+    const mapa = new Map<number, ItemPlanoConciliacao>();
+    regras.forEach((r) => mapa.set(r.cfop, r));
+    return mapa;
+  }
+
+  /**
+   * Calcula saldos projetados baseado nas notas e regras.
+   */
+  private calcularSaldosProjetados(
+    notas: any[],
+    mapaRegras: Map<number, ItemPlanoConciliacao>,
+  ): MapaSaldoConta {
+    const saldos: MapaSaldoConta = new Map();
 
     for (const nota of notas) {
       const regra = mapaRegras.get(nota.CODIGOCFOP);
 
-      if (regra && regra.contabiliza) {
-        const valorBaseItem = nota.VALORCONTABILIMPOSTO;
-
-        // Impostos Totais
-        const valorIcms = nota.VALORIMPOSTO || 0;
-        const valorIpiTotalNota = nota.VALORIPI || 0;
-        const valorPisTotalNota = nota.VALORPIS || 0; // <--- NOVO
-        const valorCofinsTotalNota = nota.VALORCOFINS || 0; // <--- NOVO
-
-        let valorParaCreditoPrincipal = valorBaseItem;
-        const valorParaDebitoPrincipal = valorBaseItem; // Cheio
-
-        let valorParaContaRetidos = 0;
-
-        // Variáveis proporcionais
-        let valorIpiProporcional = 0;
-        let valorPisProporcional = 0;
-        let valorCofinsProporcional = 0;
-
-        // --- CÁLCULO DA PROPORÇÃO ---
-        let proporcao = 0;
-        if (nota.VALORCONTABIL > 0) {
-          proporcao = nota.VALORCONTABILIMPOSTO / nota.VALORCONTABIL;
-        }
-
-        // 1. Rateio Retenções
-        if (nota.TOTAL_RETIDO_NOTA > 0) {
-          const retidoProporcional = nota.TOTAL_RETIDO_NOTA * proporcao;
-          valorParaContaRetidos = retidoProporcional;
-          valorParaCreditoPrincipal -= retidoProporcional;
-        }
-
-        // 2. Rateio Impostos (IPI, PIS, COFINS)
-        if (valorIpiTotalNota > 0)
-          valorIpiProporcional = valorIpiTotalNota * proporcao;
-        if (valorPisTotalNota > 0)
-          valorPisProporcional = valorPisTotalNota * proporcao;
-        if (valorCofinsTotalNota > 0)
-          valorCofinsProporcional = valorCofinsTotalNota * proporcao;
-
-        // --- CONTABILIZAÇÃO DOS IMPOSTOS RECUPERÁVEIS ---
-
-        // Função auxiliar para lançar o imposto (Refatoração para limpar o código)
-        const processarImpostoRecuperavel = (
-          valor: number,
-          contaAtivo: number,
-        ) => {
-          if (valor > 0) {
-            // A: Debita no Ativo (A Recuperar)
-            this.adicionarSaldo(saldosProjetados, contaAtivo, valor, "D");
-
-            // B: Credita na Conta Principal (Reduzindo o Custo)
-            if (regra.contasDebito) {
-              regra.contasDebito.forEach((contaId) => {
-                this.adicionarSaldo(saldosProjetados, contaId, valor, "C");
-              });
-            }
-          }
-        };
-
-        // Aplica para todos os impostos
-        // processarImpostoRecuperavel(valorIcms, CONTA_ICMS_RECUPERAR);
-        // processarImpostoRecuperavel(valorIpiProporcional, CONTA_IPI_RECUPERAR);
-        processarImpostoRecuperavel(valorPisProporcional, CONTA_PIS_RECUPERAR);
-        processarImpostoRecuperavel(
-          valorCofinsProporcional,
-          CONTA_COFINS_RECUPERAR,
-        );
-
-        // 3. Lança DÉBITO PRINCIPAL (Valor Cheio)
-        if (regra.contasDebito) {
-          regra.contasDebito.forEach((contaId) => {
-            this.adicionarSaldo(
-              saldosProjetados,
-              contaId,
-              valorParaDebitoPrincipal,
-              "D",
-            );
-          });
-        }
-
-        // 4. Lança CRÉDITO PRINCIPAL (Fornecedor)
-        if (regra.contasCredito) {
-          regra.contasCredito.forEach((contaId) => {
-            this.adicionarSaldo(
-              saldosProjetados,
-              contaId,
-              valorParaCreditoPrincipal,
-              "C",
-            );
-          });
-        }
-
-        // 5. Lança CRÉDITO RETIDOS
-        if (valorParaContaRetidos > 0) {
-          this.adicionarSaldo(
-            saldosProjetados,
-            CONTA_RETIDOS,
-            valorParaContaRetidos,
-            "C",
-          );
-        }
+      if (!regra || !regra.contabiliza) {
+        continue;
       }
+
+      this.processarNota(nota, regra, saldos);
     }
 
-    // --- GERAÇÃO FINAL ---
-    const linhas: BalanceteLinha[] = [];
-    for (const raiz of arvorePlanoContas) {
-      if (
-        raiz.CLASSIFCONTA.startsWith("1") ||
-        raiz.CLASSIFCONTA.startsWith("2")
-      ) {
-        this.acumularSaldosHierarquicos(raiz, saldosProjetados, linhas, 4);
-      }
-    }
-
-    const linhasComSaldo = linhas.filter(
-      (linha) => linha.debito !== 0 || linha.credito !== 0,
-    );
-
-    linhasComSaldo.sort((a, b) =>
-      this.compararClassificacao(a.classificacao, b.classificacao),
-    );
-
-    return linhasComSaldo;
+    return saldos;
   }
 
-  // Métodos auxiliares permanecem iguais...
-  private adicionarSaldo(
-    mapa: Map<number, { debito: number; credito: number }>,
-    contaId: number,
-    valor: number,
-    tipo: "D" | "C",
-  ) {
-    const atual = mapa.get(contaId) || { debito: 0, credito: 0 };
-    if (tipo === "D") atual.debito += valor;
-    else atual.credito += valor;
-    mapa.set(contaId, atual);
-  }
+  /**
+   * Processa uma nota fiscal aplicando as regras de conciliação.
+   */
+  private processarNota(
+    nota: any,
+    regra: ItemPlanoConciliacao,
+    saldos: MapaSaldoConta,
+  ): void {
+    // Calcula rateio de impostos (para IPI e retenções)
+    const rateio = calcularRateioImpostos(nota);
 
-  private acumularSaldosHierarquicos(
-    node: PlanoContaNode,
-    saldosMap: Map<number, { debito: number; credito: number }>,
-    resultado: BalanceteLinha[],
-    nivelMaximo: number,
-  ): { debito: number; credito: number } {
-    let debito = 0;
-    let credito = 0;
-    const saldoProprio = saldosMap.get(node.CONTACTB);
-    if (saldoProprio) {
-      debito += saldoProprio.debito;
-      credito += saldoProprio.credito;
-    }
-    for (const filho of node.filhos) {
-      const saldoFilho = this.acumularSaldosHierarquicos(
-        filho,
-        saldosMap,
-        resultado,
-        nivelMaximo,
-      );
-      debito += saldoFilho.debito;
-      credito += saldoFilho.credito;
-    }
-    const nivelDaConta = node.CLASSIFCONTA.split(".").length;
-    if (nivelDaConta <= nivelMaximo) {
-      resultado.push({
-        contactb: node.CONTACTB,
-        classificacao: node.CLASSIFCONTA,
-        descricao: node.DESCRCONTA,
-        debito: parseFloat(debito.toFixed(2)),
-        credito: parseFloat(credito.toFixed(2)),
+    const valorIcms = nota.VALORIMPOSTO || 0;
+
+    // ICMS A Recuperar
+    this.processarImpostoRecuperavel(
+      saldos,
+      valorIcms,
+      CONTAS_SISTEMA.ICMS_A_RECUPERAR,
+      regra.contasDebito || [],
+    );
+
+    // IPI A Recuperar
+    this.processarImpostoRecuperavel(
+      saldos,
+      rateio.valorIpiProporcional,
+      CONTAS_SISTEMA.IPI_A_RECUPERAR,
+      regra.contasDebito || [],
+    );
+
+    // ← MUDANÇA: Usar valores DIRETOS da nota (já vem correto da query)
+    // PIS A Recuperar
+    this.processarImpostoRecuperavel(
+      saldos,
+      nota.VALORPIS || 0, // ← Valor correto do CFOP!
+      CONTAS_SISTEMA.PIS_A_RECUPERAR,
+      regra.contasDebito || [],
+    );
+
+    // COFINS A Recuperar
+    this.processarImpostoRecuperavel(
+      saldos,
+      nota.VALORCOFINS || 0, // ← Valor correto do CFOP!
+      CONTAS_SISTEMA.COFINS_A_RECUPERAR,
+      regra.contasDebito || [],
+    );
+
+    // 1. DÉBITO: Valor cheio (sem descontos)
+    if (regra.contasDebito) {
+      regra.contasDebito.forEach((contaId) => {
+        adicionarSaldoConta(saldos, contaId, rateio.valorDebitoPrincipal, "D");
       });
     }
-    return { debito, credito };
+
+    // 2. CRÉDITO: Valor do fornecedor (já descontado das retenções)
+    if (regra.contasCredito) {
+      regra.contasCredito.forEach((contaId) => {
+        adicionarSaldoConta(saldos, contaId, rateio.valorCreditoPrincipal, "C");
+      });
+    }
+
+    // 3. RETENÇÕES: Apenas lança na conta de retidos
+    if (rateio.valorRetidos > 0) {
+      adicionarSaldoConta(
+        saldos,
+        CONTAS_SISTEMA.RETIDOS,
+        rateio.valorRetidos,
+        "C",
+      );
+    }
   }
 
-  private compararClassificacao(a: string, b: string): number {
-    const partesA = a.split(".").map((p) => parseInt(p) || 0);
-    const partesB = b.split(".").map((p) => parseInt(p) || 0);
-    const maxLength = Math.max(partesA.length, partesB.length);
-    for (let i = 0; i < maxLength; i++) {
-      const valorA = partesA[i] || 0;
-      const valorB = partesB[i] || 0;
-      if (valorA !== valorB) return valorA - valorB;
+  /**
+   * Processa imposto recuperável.
+   * Cria DÉBITO na conta de ativo (A Recuperar) e CRÉDITO na conta principal (reduz custo).
+   */
+  private processarImpostoRecuperavel(
+    saldos: MapaSaldoConta,
+    valor: number,
+    contaAtivo: number,
+    contasPrincipais: number[],
+  ): void {
+    if (valor <= 0) return;
+
+    // Débito no Ativo (Impostos A Recuperar)
+    adicionarSaldoConta(saldos, contaAtivo, valor, "D");
+
+    // Crédito na(s) Conta(s) Principal(is) - Reduz o custo
+    contasPrincipais.forEach((contaId) => {
+      adicionarSaldoConta(saldos, contaId, valor, "C");
+    });
+  }
+
+  /**
+   * Gera o balancete a partir dos saldos calculados.
+   */
+  private gerarBalancete(
+    arvore: any[],
+    saldos: MapaSaldoConta,
+  ): BalanceteLinha[] {
+    const contasPatrimoniais = filtrarContasPatrimoniais(arvore);
+    const linhas: BalanceteLinha[] = [];
+
+    for (const raiz of contasPatrimoniais) {
+      acumularSaldosHierarquicos(
+        raiz,
+        saldos,
+        linhas,
+        NIVEIS_RELATORIO.ANALITICO,
+      );
     }
-    return 0;
+
+    const linhasComSaldo = filtrarLinhasComSaldo(linhas);
+    return ordenarBalancete(linhasComSaldo);
   }
 }

@@ -2,13 +2,19 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmpresaService = void 0;
 const EmpresaRepository_1 = require("../repositories/EmpresaRepository");
-class EmpresaService {
+const BaseService_1 = require("./BaseService");
+class EmpresaService extends BaseService_1.BaseService {
     repository;
-    constructor() {
-        this.repository = new EmpresaRepository_1.EmpresaRepository();
+    constructor(repository = new EmpresaRepository_1.EmpresaRepository()) {
+        super();
+        this.repository = repository;
     }
+    /**
+     * Obtém todas as empresas cadastradas no sistema.
+     */
     async obterTodasEmpresas() {
-        return this.repository.obterEmpresas();
+        this.log("obterTodasEmpresas");
+        return await this.repository.obterEmpresas();
     }
 }
 exports.EmpresaService = EmpresaService;

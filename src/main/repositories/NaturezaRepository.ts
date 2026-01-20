@@ -1,77 +1,79 @@
-import { executeQuery } from "../database/questorConnection";
-import { decodificarTexto } from "../utils/formatters";
-import { Natureza } from "@shared/types/Natureza";
+import { executeQuery } from "@database/questorConnection";
+import { decodificarTexto } from "@utils/formatters";
+import type { Natureza } from "@shared/types/Natureza";
+import { BaseRepository } from "./BaseRepository";
 
-export class NaturezaRepository {
+export class NaturezaRepository extends BaseRepository {
   /**
-   * Lista todas as CFOPs de uma empresa (ou geral).
-   * Se passar termoBusca, filtra por código ou descrição.
+   * Lista CFOPs com filtro opcional por termo de busca.
+   * Usa DISTINCT para evitar duplicatas.
    */
   async listarNaturezas(
     codigoEmpresa: number,
     termoBusca?: string,
   ): Promise<Natureza[]> {
-    // ADICIONADO "DISTINCT" PARA REMOVER DUPLICADAS
-    let sql = `
-      SELECT DISTINCT
-        CODIGOEMPRESA,
-        CODIGOCFOP,
-        CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
-      FROM CFOP
-      WHERE CODIGOEMPRESA = ?
-    `;
+    return this.executarQuery(async () => {
+      let sql = `
+        SELECT DISTINCT
+          CODIGOEMPRESA,
+          CODIGOCFOP,
+          CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
+        FROM CFOP
+        WHERE CODIGOEMPRESA = ?
+      `;
 
-    const params: any[] = [codigoEmpresa];
+      const params: any[] = [codigoEmpresa];
 
-    if (termoBusca) {
-      // Verifica se é número (busca exata ou inicio do código) ou texto
-      const termoNumerico = parseInt(termoBusca);
+      if (termoBusca) {
+        sql += ` AND (CAST(CODIGOCFOP AS VARCHAR(10)) LIKE ? OR DESCRCFOP LIKE ?)`;
+        params.push(`${termoBusca}%`, `%${termoBusca}%`);
+      }
 
-      // Ajustei a lógica de busca para ser mais precisa
-      sql += ` AND (CAST(CODIGOCFOP AS VARCHAR(10)) LIKE ? OR DESCRCFOP LIKE ?)`;
-      params.push(`${termoBusca}%`); // Código começa com...
-      params.push(`%${termoBusca}%`); // Descrição contém...
-    }
+      sql += ` ORDER BY CODIGOCFOP`;
 
-    sql += ` ORDER BY CODIGOCFOP`;
+      const dadosBrutos = (await executeQuery(sql, params)) as any[];
 
-    const dadosBrutos = (await executeQuery(sql, params)) as any[];
-
-    return dadosBrutos.map((row) => ({
-      CODIGOEMPRESA: row.CODIGOEMPRESA,
-      CODIGOCFOP: row.CODIGOCFOP,
-      DESCRCFOP: decodificarTexto(row.DESCRCFOP),
-    }));
+      return this.mapearNaturezas(dadosBrutos);
+    }, "listar naturezas");
   }
 
   /**
-   * Busca uma única CFOP pelo código (útil para validar se o usuário digitar manual)
+   * Busca CFOP específica por código.
    */
   async obterPorCodigo(
     codigoEmpresa: number,
     codigoCfop: number,
   ): Promise<Natureza | null> {
-    // ADICIONADO "DISTINCT" AQUI TAMBÉM POR SEGURANÇA
-    const sql = `
-      SELECT DISTINCT
-        CODIGOEMPRESA,
-        CODIGOCFOP,
-        CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
-      FROM CFOP
-      WHERE CODIGOEMPRESA = ? AND CODIGOCFOP = ?
-    `;
+    return this.executarQuery(async () => {
+      const sql = `
+        SELECT DISTINCT
+          CODIGOEMPRESA,
+          CODIGOCFOP,
+          CAST(DESCRCFOP AS VARCHAR(200) CHARACTER SET OCTETS) as DESCRCFOP
+        FROM CFOP
+        WHERE CODIGOEMPRESA = ? AND CODIGOCFOP = ?
+      `;
 
-    const dados = (await executeQuery(sql, [
-      codigoEmpresa,
-      codigoCfop,
-    ])) as any[];
+      const dados = (await executeQuery(sql, [
+        codigoEmpresa,
+        codigoCfop,
+      ])) as any[];
 
-    if (dados.length === 0) return null;
+      if (dados.length === 0) return null;
 
-    return {
-      CODIGOEMPRESA: dados[0].CODIGOEMPRESA,
-      CODIGOCFOP: dados[0].CODIGOCFOP,
-      DESCRCFOP: decodificarTexto(dados[0].DESCRCFOP),
-    };
+      const naturezas = this.mapearNaturezas(dados);
+      return naturezas[0];
+    }, `buscar CFOP ${codigoCfop}`);
+  }
+
+  /**
+   * Mapeia dados brutos para o tipo Natureza.
+   */
+  private mapearNaturezas(dadosBrutos: any[]): Natureza[] {
+    return dadosBrutos.map((row) => ({
+      CODIGOEMPRESA: row.CODIGOEMPRESA,
+      CODIGOCFOP: row.CODIGOCFOP,
+      DESCRCFOP: decodificarTexto(row.DESCRCFOP),
+    }));
   }
 }

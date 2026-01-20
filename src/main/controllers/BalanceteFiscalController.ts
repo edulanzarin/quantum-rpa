@@ -1,19 +1,13 @@
-import { ipcMain } from "electron";
 import { BalanceteFiscalService } from "@services/BalanceteFiscalService";
+import { BaseController } from "./BaseController";
 
-export class BalanceteFiscalController {
-  private service: BalanceteFiscalService;
-
-  constructor() {
-    this.service = new BalanceteFiscalService();
+export class BalanceteFiscalController extends BaseController {
+  constructor(private service = new BalanceteFiscalService()) {
+    super();
   }
 
-  registrarEventos() {
-    /**
-     * Gera o "Balancete Sombra" (Projeção Fiscal)
-     * Baseado nas Notas de Entrada + Regras do Plano de Conciliação
-     */
-    ipcMain.handle(
+  registrarEventos(): void {
+    this.registrarHandler(
       "balancete:gerarProjecaoFiscal",
       async (
         _event,
@@ -22,21 +16,19 @@ export class BalanceteFiscalController {
         dataFim: Date,
         planoConciliacaoId: number,
       ) => {
-        try {
-          console.log(
-            `[IPC] Gerando projeção fiscal para empresa ${codigoEmpresa}, Plano ${planoConciliacaoId}...`,
-          );
+        this.log("gerarProjecaoFiscal", {
+          codigoEmpresa,
+          dataInicio,
+          dataFim,
+          planoConciliacaoId,
+        });
 
-          return await this.service.gerarBalancoPatrimonialFiscal(
-            codigoEmpresa,
-            dataInicio,
-            dataFim,
-            planoConciliacaoId,
-          );
-        } catch (error) {
-          console.error("❌ Erro ao gerar projeção fiscal:", error);
-          return [];
-        }
+        return await this.service.gerarBalancoPatrimonialFiscal(
+          codigoEmpresa,
+          new Date(dataInicio),
+          new Date(dataFim),
+          planoConciliacaoId,
+        );
       },
     );
   }

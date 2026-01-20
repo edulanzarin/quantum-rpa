@@ -8,7 +8,11 @@
       "@services/*": ["main/services/*"],
       "@repositories/*": ["main/repositories/*"],
       "@controllers/*": ["main/controllers/*"],
-      "@utils/*": ["main/utils/*"]
+      "@utils/*": ["main/utils/*"],
+      "@constants/*": ["main/constants/*"],
+      "@constants": ["main/constants"],
+      "@errors/*": ["main/errors/*"],
+      "@errors": ["main/errors"]
     }
   }
 }

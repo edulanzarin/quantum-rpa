@@ -1,25 +1,32 @@
 import { LancamentoFiscalEntradaRepository } from "@repositories/LancamentoFiscalEntradaRepository";
 import type { LancamentoFiscalEntradaUnificado } from "@shared/types/LancamentoFiscalEntrada";
+import { BaseService } from "./BaseService";
+import {
+  validarNumeroPositivo,
+  validarIntervaloDatas,
+} from "@utils/validation.utils";
 
-export class LancamentoFiscalEntradaService {
-  private repository: LancamentoFiscalEntradaRepository;
-
-  constructor() {
-    this.repository = new LancamentoFiscalEntradaRepository();
+export class LancamentoFiscalEntradaService extends BaseService {
+  constructor(private repository = new LancamentoFiscalEntradaRepository()) {
+    super();
   }
 
   /**
-   * Busca os lançamentos fiscais de entrada e seus respectivos CFOPs.
-   * Retorna uma lista unificada onde os dados da nota se repetem para cada CFOP.
+   * Busca lançamentos fiscais de entrada com dados unificados da nota.
+   * Retorna lista onde cada item representa um CFOP da nota.
    */
   async buscarLancamentosFiscais(
     codigoEmpresa: number,
     dataInicio: Date,
     dataFim: Date,
   ): Promise<LancamentoFiscalEntradaUnificado[]> {
-    console.log(
-      `[Fiscal] Buscando notas de entrada entre ${dataInicio.toISOString()} e ${dataFim.toISOString()}...`,
-    );
+    validarNumeroPositivo(codigoEmpresa, "Código da empresa");
+    validarIntervaloDatas(dataInicio, dataFim);
+
+    this.log("buscarLancamentosFiscais", {
+      codigoEmpresa,
+      periodo: `${dataInicio.toISOString()} até ${dataFim.toISOString()}`,
+    });
 
     const lancamentos = await this.repository.obterItensPorCfopComDadosDaNota(
       codigoEmpresa,
@@ -27,7 +34,7 @@ export class LancamentoFiscalEntradaService {
       dataFim,
     );
 
-    console.log(`[Fiscal] ${lancamentos.length} itens (CFOPs) encontrados.`);
+    this.log(`${lancamentos.length} itens fiscais encontrados`);
 
     return lancamentos;
   }

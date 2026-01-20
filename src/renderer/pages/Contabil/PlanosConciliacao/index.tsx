@@ -1,15 +1,13 @@
-import React, { useState, type KeyboardEvent } from "react";
-import { Search, Loader2, Plus, Edit, Trash2, Check, X } from "lucide-react";
+import { useState, type ChangeEvent } from "react";
+import { Search, Loader2, Edit, Trash2, Check, X } from "lucide-react";
 import { Input } from "@components/ui/Input";
 import { Title } from "@components/ui/Title";
 import { Modal } from "@components/ui/Modal";
 import { Table, type Column } from "@components/ui/Table";
+import type { Natureza } from "@shared/types";
+import { unwrap } from "@/utils/api-helper";
+import { useToast } from "@/hooks/useToast";
 import "../styles.css";
-
-interface Natureza {
-  CODIGOCFOP: number;
-  DESCRCFOP: string;
-}
 
 interface ItemForm {
   cfop: string;
@@ -19,9 +17,25 @@ interface ItemForm {
   contabiliza: boolean;
 }
 
+interface ItemPlano {
+  cfop: number;
+  descricao: string;
+  contasDebito: number[];
+  contasCredito: number[];
+  contabiliza: boolean;
+}
+
+interface PlanoHeader {
+  id: number;
+  nome_plano: string;
+  ativo?: number;
+}
+
 const EMPRESA_PADRAO = 557;
 
 export function PlanosConciliacao() {
+  const toast = useToast();
+
   const [formData, setFormData] = useState({
     id: null as number | null,
     codPlano: "",
@@ -31,14 +45,14 @@ export function PlanosConciliacao() {
   const [loading, setLoading] = useState(false);
   const [planoCarregado, setPlanoCarregado] = useState(false);
 
-  const [itensPlano, setItensPlano] = useState<any[]>([]);
+  const [itensPlano, setItensPlano] = useState<ItemPlano[]>([]);
   const [buscaItens, setBuscaItens] = useState("");
 
   const [modalBuscaAberto, setModalBuscaAberto] = useState(false);
   const [modalItemAberto, setModalItemAberto] = useState(false);
   const [modalNaturezaAberto, setModalNaturezaAberto] = useState(false);
 
-  const [listaPlanos, setListaPlanos] = useState<any[]>([]);
+  const [listaPlanos, setListaPlanos] = useState<PlanoHeader[]>([]);
   const [listaNaturezas, setListaNaturezas] = useState<Natureza[]>([]);
   const [carregandoLista, setCarregandoLista] = useState(false);
   const [carregandoNaturezas, setCarregandoNaturezas] = useState(false);
@@ -61,7 +75,7 @@ export function PlanosConciliacao() {
     );
   });
 
-  const colunasPlanos: Column<any>[] = [
+  const colunasPlanos: Column<PlanoHeader>[] = [
     { header: "Cód.", accessor: "id", width: "80px" },
     { header: "Nome do Plano", accessor: "nome_plano" },
   ];
@@ -71,7 +85,7 @@ export function PlanosConciliacao() {
     { header: "Descrição", accessor: "DESCRCFOP" },
   ];
 
-  const colunasItens: Column<any>[] = [
+  const colunasItens: Column<ItemPlano>[] = [
     {
       header: "CFOP",
       accessor: "cfop",
@@ -143,7 +157,7 @@ export function PlanosConciliacao() {
     },
     {
       header: "Ações",
-      accessor: "actions",
+      accessor: "cfop" as keyof ItemPlano,
       width: "100px",
       align: "center",
       render: (_, index) => (
@@ -167,67 +181,90 @@ export function PlanosConciliacao() {
     },
   ];
 
-  const handleInputChange = (e: any) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const buscarPorCodigo = async () => {
     if (!formData.codPlano) return;
+
     setLoading(true);
     try {
       const id = parseInt(formData.codPlano);
-      // @ts-ignore
-      const plano = await window.api.planos.obterPorId(id);
+      const plano = await unwrap(window.api.planos.obterPorId(id));
+
       if (plano) {
         setFormData({
-          id: plano.id,
+          id: plano.id!,
           codPlano: String(plano.id),
           nomePlano: plano.nome,
         });
         setItensPlano(plano.itens || []);
         setPlanoCarregado(true);
+        toast.success("Plano carregado com sucesso!");
       } else {
         setFormData((prev) => ({ ...prev, id: null, nomePlano: "" }));
         setItensPlano([]);
         setPlanoCarregado(false);
+        toast.warning("Plano não encontrado");
       }
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao buscar plano:", error);
+      toast.error("Erro ao buscar plano");
+      setFormData((prev) => ({ ...prev, id: null, nomePlano: "" }));
+      setItensPlano([]);
+      setPlanoCarregado(false);
     } finally {
       setLoading(false);
     }
   };
 
   const salvarTudo = async () => {
+    // Validações
+    if (!formData.nomePlano.trim()) {
+      toast.warning("Por favor, informe o nome do plano");
+      return;
+    }
+
+    if (itensPlano.length === 0) {
+      toast.warning("Adicione pelo menos um item ao plano");
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
-        id: formData.id,
+        id: formData.id ?? undefined,
         nome: formData.nomePlano,
         ativo: true,
         itens: itensPlano,
       };
-      // @ts-ignore
-      const novoId = await window.api.planos.salvar(payload);
+
+      const novoId = await unwrap(window.api.planos.salvar(payload));
+
       setFormData((prev) => ({
         ...prev,
         id: novoId,
         codPlano: String(novoId),
       }));
       setPlanoCarregado(true);
+
+      toast.success("Plano salvo com sucesso!");
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao salvar plano:", error);
+      toast.error("Erro ao salvar plano. Verifique o console.");
     } finally {
       setLoading(false);
     }
   };
 
-  const parseContas = (str: string) =>
-    str
+  const parseContas = (str: string): number[] => {
+    return str
       .split(",")
       .map((s) => parseInt(s.trim()))
       .filter((n) => !isNaN(n));
+  };
 
   const abrirModalNovoItem = () => {
     setIndiceEmEdicao(null);
@@ -259,17 +296,29 @@ export function PlanosConciliacao() {
   };
 
   const confirmarModalItem = () => {
-    const novoItem = {
+    // Validação
+    if (!itemForm.cfop) {
+      toast.warning("Informe o CFOP");
+      return;
+    }
+
+    const novoItem: ItemPlano = {
       cfop: parseInt(itemForm.cfop),
       descricao: itemForm.descricao || "Sem descrição",
       contasDebito: parseContas(itemForm.contasDebito),
       contasCredito: parseContas(itemForm.contasCredito),
       contabiliza: itemForm.contabiliza,
     };
+
     const lista = [...itensPlano];
-    if (indiceEmEdicao !== null)
-      lista[indiceEmEdicao] = { ...lista[indiceEmEdicao], ...novoItem };
-    else lista.push(novoItem);
+
+    if (indiceEmEdicao !== null) {
+      lista[indiceEmEdicao] = novoItem;
+      toast.success("Item atualizado!");
+    } else {
+      lista.push(novoItem);
+      toast.success("Item adicionado!");
+    }
 
     setItensPlano(lista);
     setModalItemAberto(false);
@@ -282,31 +331,42 @@ export function PlanosConciliacao() {
     const lista = [...itensPlano];
     lista.splice(indexReal, 1);
     setItensPlano(lista);
+
+    toast.info("Item removido");
   };
 
   const buscarNaturezaPorCodigo = async () => {
     if (!itemForm.cfop) return;
+
     try {
-      // @ts-ignore
-      const nat = await window.api.naturezas.buscarPorCodigo(
-        EMPRESA_PADRAO,
-        parseInt(itemForm.cfop),
+      const nat = await unwrap(
+        window.api.naturezas.buscarPorCodigo(
+          EMPRESA_PADRAO,
+          parseInt(itemForm.cfop),
+        ),
       );
-      if (nat) setItemForm((prev) => ({ ...prev, descricao: nat.DESCRCFOP }));
+
+      if (nat) {
+        setItemForm((prev) => ({ ...prev, descricao: nat.DESCRCFOP }));
+      }
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao buscar natureza:", error);
+      toast.warning("CFOP não encontrada");
     }
   };
 
   const abrirModalNatureza = async () => {
     setModalNaturezaAberto(true);
     setCarregandoNaturezas(true);
+
     try {
-      // @ts-ignore
-      const dados = await window.api.naturezas.listar(EMPRESA_PADRAO, "");
+      const dados = await unwrap(
+        window.api.naturezas.listar(EMPRESA_PADRAO, ""),
+      );
       setListaNaturezas(dados);
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao carregar naturezas:", error);
+      toast.error("Erro ao carregar lista de CFOPs");
     } finally {
       setCarregandoNaturezas(false);
     }
@@ -324,18 +384,19 @@ export function PlanosConciliacao() {
   const abrirModalPesquisa = async () => {
     setModalBuscaAberto(true);
     setCarregandoLista(true);
+
     try {
-      // @ts-ignore
-      const dados = await window.api.planos.listar();
+      const dados = await unwrap(window.api.planos.listar());
       setListaPlanos(dados);
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao carregar planos:", error);
+      toast.error("Erro ao carregar lista de planos");
     } finally {
       setCarregandoLista(false);
     }
   };
 
-  const selecionarPlanoNoModal = (plano: any) => {
+  const selecionarPlanoNoModal = (plano: PlanoHeader) => {
     setFormData({
       id: plano.id,
       codPlano: String(plano.id),
@@ -422,10 +483,14 @@ export function PlanosConciliacao() {
             </div>
           </div>
 
-          <Table
+          <Table<ItemPlano>
             data={itensFiltrados}
             columns={colunasItens}
             enableSearch={false}
+            adaptiveHeight={true}
+            heightOffset="340px"
+            minHeight="350px"
+            maxHeight="700px"
           />
         </div>
       )}
@@ -435,12 +500,13 @@ export function PlanosConciliacao() {
         onClose={() => setModalBuscaAberto(false)}
         title="Pesquisar Plano"
       >
-        <Table
+        <Table<PlanoHeader>
           data={listaPlanos}
           columns={colunasPlanos}
           onRowClick={selecionarPlanoNoModal}
           isLoading={carregandoLista}
           enableSearch={true}
+          maxHeight="500px"
         />
       </Modal>
 
@@ -545,6 +611,7 @@ export function PlanosConciliacao() {
           onRowClick={selecionarNatureza}
           isLoading={carregandoNaturezas}
           enableSearch={true}
+          maxHeight="500px"
         />
       </Modal>
     </div>

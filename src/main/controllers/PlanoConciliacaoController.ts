@@ -1,26 +1,29 @@
-import { ipcMain } from "electron";
-import { PlanoConciliacaoService } from "../services/PlanoConciliacaoService";
+import { PlanoConciliacaoService } from "@services/PlanoConciliacaoService";
+import { BaseController } from "./BaseController";
 import type { PlanoConciliacao } from "@shared/types/PlanoConciliacao";
 
-export class PlanoConciliacaoController {
-  private service = new PlanoConciliacaoService();
+export class PlanoConciliacaoController extends BaseController {
+  constructor(private service = new PlanoConciliacaoService()) {
+    super();
+  }
 
-  registrarEventos() {
-    ipcMain.handle("plano:listar", async () => {
-      try {
-        return await this.service.listarTodosPlanos();
-      } catch (error: any) {
-        console.error("Erro ao listar planos:", error);
-        throw error;
-      }
+  registrarEventos(): void {
+    this.registrarHandler("plano:listar", async () => {
+      this.log("listar");
+      return await this.service.listarTodosPlanos();
     });
 
-    ipcMain.handle("plano:obterPorId", async (_, id: number) => {
+    this.registrarHandler("plano:obterPorId", async (_event, id: number) => {
+      this.log("obterPorId", { id });
       return await this.service.obterPlanoCompleto(id);
     });
 
-    ipcMain.handle("plano:salvar", async (_, plano: PlanoConciliacao) => {
-      return await this.service.salvarPlano(plano);
-    });
+    this.registrarHandler(
+      "plano:salvar",
+      async (_event, plano: PlanoConciliacao) => {
+        this.log("salvar", { nome: plano.nome, itens: plano.itens?.length });
+        return await this.service.salvarPlano(plano);
+      },
+    );
   }
 }
