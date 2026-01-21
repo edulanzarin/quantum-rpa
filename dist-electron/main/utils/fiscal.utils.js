@@ -7,7 +7,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.calcularRateioImpostos = calcularRateioImpostos;
 exports.contabilizarImpostoRecuperavel = contabilizarImpostoRecuperavel;
 exports.contabilizarLancamentoPrincipal = contabilizarLancamentoPrincipal;
+exports.processarPisCofinsRecuperavel = processarPisCofinsRecuperavel;
 const contabilidade_utils_1 = require("./contabilidade.utils");
+const _constants_1 = require("../constants");
 /**
  * Calcula o rateio proporcional de impostos para um item da nota fiscal.
  *
@@ -23,20 +25,15 @@ function calcularRateioImpostos(nota) {
     const valorPisTotal = nota.VALORPIS || 0;
     const valorCofinsTotal = nota.VALORCOFINS || 0;
     const valorRetidoTotal = nota.TOTAL_RETIDO_NOTA || 0;
-    // Calcula proporção deste item em relação ao total da nota
     let proporcao = 0;
     if (nota.VALORCONTABIL > 0) {
         proporcao = nota.VALORCONTABILIMPOSTO / nota.VALORCONTABIL;
     }
-    // Rateio de retenções
     const valorRetidos = valorRetidoTotal * proporcao;
-    // Rateio de impostos
     const valorIpiProporcional = valorIpiTotal * proporcao;
     const valorPisProporcional = valorPisTotal * proporcao;
     const valorCofinsProporcional = valorCofinsTotal * proporcao;
-    // Valor principal para débito (cheio)
     const valorDebitoPrincipal = valorBase;
-    // Valor principal para crédito (descontando retenções)
     const valorCreditoPrincipal = valorBase - valorRetidos;
     return {
         valorBasePrincipal: valorBase,
@@ -63,9 +60,7 @@ function calcularRateioImpostos(nota) {
 function contabilizarImpostoRecuperavel(saldos, valorImposto, contaAtivo, contasPrincipais) {
     if (valorImposto <= 0)
         return;
-    // Débito no Ativo (A Recuperar)
     (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaAtivo, valorImposto, "D");
-    // Crédito na(s) Conta(s) Principal(is)
     contasPrincipais.forEach((contaId) => {
         (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaId, valorImposto, "C");
     });
@@ -80,12 +75,29 @@ function contabilizarImpostoRecuperavel(saldos, valorImposto, contaAtivo, contas
  * @param valorCredito - Valor do crédito
  */
 function contabilizarLancamentoPrincipal(saldos, contasDebito, contasCredito, valorDebito, valorCredito) {
-    // Débitos
     contasDebito.forEach((contaId) => {
         (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaId, valorDebito, "D");
     });
-    // Créditos
     contasCredito.forEach((contaId) => {
         (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaId, valorCredito, "C");
     });
+}
+/**
+ * Processa lançamentos de PIS e COFINS recuperáveis.
+ * Cria DÉBITO na conta de ativo e CRÉDITO na conta de origem.
+ *
+ * @param saldos - Mapa de saldos contábeis
+ * @param contaOrigem - Conta que terá o crédito (reduz custo)
+ * @param valorPis - Valor do PIS
+ * @param valorCofins - Valor do COFINS
+ */
+function processarPisCofinsRecuperavel(saldos, contaOrigem, valorPis, valorCofins) {
+    if (valorPis > 0) {
+        (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, _constants_1.CONTAS_SISTEMA.PIS_A_RECUPERAR, valorPis, "D");
+        (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaOrigem, valorPis, "C");
+    }
+    if (valorCofins > 0) {
+        (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, _constants_1.CONTAS_SISTEMA.COFINS_A_RECUPERAR, valorCofins, "D");
+        (0, contabilidade_utils_1.adicionarSaldoConta)(saldos, contaOrigem, valorCofins, "C");
+    }
 }

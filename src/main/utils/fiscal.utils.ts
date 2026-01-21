@@ -6,6 +6,7 @@
 import type { LancamentoFiscalEntradaUnificado } from "@shared/types/LancamentoFiscalEntrada";
 import type { MapaSaldoConta } from "@shared/types/MapaSaldoConta";
 import { adicionarSaldoConta } from "./contabilidade.utils";
+import { CONTAS_SISTEMA } from "@constants";
 
 /**
  * Resultado do cálculo de rateio de impostos para um item
@@ -38,24 +39,19 @@ export function calcularRateioImpostos(
   const valorCofinsTotal = nota.VALORCOFINS || 0;
   const valorRetidoTotal = nota.TOTAL_RETIDO_NOTA || 0;
 
-  // Calcula proporção deste item em relação ao total da nota
   let proporcao = 0;
   if (nota.VALORCONTABIL > 0) {
     proporcao = nota.VALORCONTABILIMPOSTO / nota.VALORCONTABIL;
   }
 
-  // Rateio de retenções
   const valorRetidos = valorRetidoTotal * proporcao;
 
-  // Rateio de impostos
   const valorIpiProporcional = valorIpiTotal * proporcao;
   const valorPisProporcional = valorPisTotal * proporcao;
   const valorCofinsProporcional = valorCofinsTotal * proporcao;
 
-  // Valor principal para débito (cheio)
   const valorDebitoPrincipal = valorBase;
 
-  // Valor principal para crédito (descontando retenções)
   const valorCreditoPrincipal = valorBase - valorRetidos;
 
   return {
@@ -89,10 +85,8 @@ export function contabilizarImpostoRecuperavel(
 ): void {
   if (valorImposto <= 0) return;
 
-  // Débito no Ativo (A Recuperar)
   adicionarSaldoConta(saldos, contaAtivo, valorImposto, "D");
 
-  // Crédito na(s) Conta(s) Principal(is)
   contasPrincipais.forEach((contaId) => {
     adicionarSaldoConta(saldos, contaId, valorImposto, "C");
   });
@@ -114,13 +108,44 @@ export function contabilizarLancamentoPrincipal(
   valorDebito: number,
   valorCredito: number,
 ): void {
-  // Débitos
   contasDebito.forEach((contaId) => {
     adicionarSaldoConta(saldos, contaId, valorDebito, "D");
   });
 
-  // Créditos
   contasCredito.forEach((contaId) => {
     adicionarSaldoConta(saldos, contaId, valorCredito, "C");
   });
+}
+
+/**
+ * Processa lançamentos de PIS e COFINS recuperáveis.
+ * Cria DÉBITO na conta de ativo e CRÉDITO na conta de origem.
+ *
+ * @param saldos - Mapa de saldos contábeis
+ * @param contaOrigem - Conta que terá o crédito (reduz custo)
+ * @param valorPis - Valor do PIS
+ * @param valorCofins - Valor do COFINS
+ */
+export function processarPisCofinsRecuperavel(
+  saldos: MapaSaldoConta,
+  contaOrigem: number,
+  valorPis: number,
+  valorCofins: number,
+): void {
+  if (valorPis > 0) {
+    adicionarSaldoConta(saldos, CONTAS_SISTEMA.PIS_A_RECUPERAR, valorPis, "D");
+
+    adicionarSaldoConta(saldos, contaOrigem, valorPis, "C");
+  }
+
+  if (valorCofins > 0) {
+    adicionarSaldoConta(
+      saldos,
+      CONTAS_SISTEMA.COFINS_A_RECUPERAR,
+      valorCofins,
+      "D",
+    );
+
+    adicionarSaldoConta(saldos, contaOrigem, valorCofins, "C");
+  }
 }

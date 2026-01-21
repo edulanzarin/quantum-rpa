@@ -570,22 +570,6 @@ export function PlanosConciliacao() {
             />
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={itemForm.contabiliza}
-                onChange={(e) =>
-                  setItemForm((prev) => ({
-                    ...prev,
-                    contabiliza: e.target.checked,
-                  }))
-                }
-              />
-              <span>Contabiliza?</span>
-            </label>
-          </div>
-
           <div className="modal-actions">
             <button
               className="btn-secondary"

@@ -491,7 +491,7 @@ export function ConferenciaFiscalBP() {
           columns={colunasEmpresa}
           onRowClick={selecionarEmpresaNoModal}
           enableSearch={true}
-          maxHeight="500px" // ← Sem adaptiveHeight = comportamento atual
+          maxHeight="500px"
         />
       </Modal>
     </div>

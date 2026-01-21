@@ -1,8 +1,12 @@
 "use strict";
+// @services/BalanceteFiscalService.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BalanceteFiscalService = void 0;
 const PlanoContaService_1 = require("./PlanoContaService");
 const LancamentoFiscalEntradaService_1 = require("./LancamentoFiscalEntradaService");
+const LancamentoFiscalSaidaService_1 = require("./LancamentoFiscalSaidaService");
+const DemaisDocumentosFiscalService_1 = require("./DemaisDocumentosFiscalService");
+const OutraOperacaoIcmsSCService_1 = require("./OutraOperacaoIcmsSCService");
 const PlanoConciliacaoRepository_1 = require("../repositories/PlanoConciliacaoRepository");
 const BaseService_1 = require("./BaseService");
 const contabilidade_utils_1 = require("../utils/contabilidade.utils");
@@ -12,18 +16,20 @@ const _constants_1 = require("../constants");
 const validation_utils_1 = require("../utils/validation.utils");
 class BalanceteFiscalService extends BaseService_1.BaseService {
     planoContaService;
-    fiscalService;
+    fiscalEntradaService;
+    fiscalSaidaService;
+    demaisDocumentosFiscalService;
+    outraOperacaoIcmsSCService;
     planoConciliacaoRepo;
-    constructor(planoContaService = new PlanoContaService_1.PlanoContaService(), fiscalService = new LancamentoFiscalEntradaService_1.LancamentoFiscalEntradaService(), planoConciliacaoRepo = new PlanoConciliacaoRepository_1.PlanoConciliacaoRepository()) {
+    constructor(planoContaService = new PlanoContaService_1.PlanoContaService(), fiscalEntradaService = new LancamentoFiscalEntradaService_1.LancamentoFiscalEntradaService(), fiscalSaidaService = new LancamentoFiscalSaidaService_1.LancamentoFiscalSaidaService(), demaisDocumentosFiscalService = new DemaisDocumentosFiscalService_1.DemaisDocumentosFiscalService(), outraOperacaoIcmsSCService = new OutraOperacaoIcmsSCService_1.OutraOperacaoIcmsSCService(), planoConciliacaoRepo = new PlanoConciliacaoRepository_1.PlanoConciliacaoRepository()) {
         super();
         this.planoContaService = planoContaService;
-        this.fiscalService = fiscalService;
+        this.fiscalEntradaService = fiscalEntradaService;
+        this.fiscalSaidaService = fiscalSaidaService;
+        this.demaisDocumentosFiscalService = demaisDocumentosFiscalService;
+        this.outraOperacaoIcmsSCService = outraOperacaoIcmsSCService;
         this.planoConciliacaoRepo = planoConciliacaoRepo;
     }
-    /**
-     * Gera projeção do balanço patrimonial baseado em notas fiscais.
-     * Aplica regras de conciliação fiscal definidas no plano.
-     */
     async gerarBalancoPatrimonialFiscal(codigoEmpresa, dataInicio, dataFim, planoConciliacaoId) {
         // Validações
         (0, validation_utils_1.validarNumeroPositivo)(codigoEmpresa, "Código da empresa");
@@ -36,92 +42,176 @@ class BalanceteFiscalService extends BaseService_1.BaseService {
             planoConciliacaoId,
         });
         // Busca dados necessários
-        const [arvorePlanoContas, notas, regrasItens] = await Promise.all([
+        const [arvorePlanoContas, notasEntrada, notasSaida, demaisDocumentosFiscal, totalDCIP, regrasItens,] = await Promise.all([
             this.planoContaService.obterPlanoProcessado(codigoEmpresa),
-            this.fiscalService.buscarLancamentosFiscais(codigoEmpresa, dataInicio, dataFim),
+            this.fiscalEntradaService.buscarLancamentosFiscais(codigoEmpresa, dataInicio, dataFim),
+            this.fiscalSaidaService.buscarLancamentosFiscais(codigoEmpresa, dataInicio, dataFim),
+            this.demaisDocumentosFiscalService.buscarPisCofinsDemaisDocumentosFiscal(codigoEmpresa, dataInicio, dataFim),
+            this.outraOperacaoIcmsSCService.buscarDCIP(codigoEmpresa, dataInicio, dataFim),
             this.planoConciliacaoRepo.obterItensPorPlano(planoConciliacaoId),
         ]);
-        // Indexa regras por CFOP para acesso O(1)
+        // Indexa regras por CFOP
         const mapaRegras = this.indexarRegrasPorCfop(regrasItens);
         // Calcula saldos projetados
-        const saldosProjetados = this.calcularSaldosProjetados(notas, mapaRegras);
+        const saldosProjetados = this.calcularSaldosProjetados(notasEntrada, notasSaida, demaisDocumentosFiscal, totalDCIP, mapaRegras);
         // Gera balancete
         return this.gerarBalancete(arvorePlanoContas, saldosProjetados);
     }
-    /**
-     * Indexa regras de conciliação por CFOP para busca rápida.
-     */
     indexarRegrasPorCfop(regras) {
         const mapa = new Map();
         regras.forEach((r) => mapa.set(r.cfop, r));
         return mapa;
     }
     /**
-     * Calcula saldos projetados baseado nas notas e regras.
+     * Calcula saldos projetados baseado nas notas de entrada, saída e demais documentos.
      */
-    calcularSaldosProjetados(notas, mapaRegras) {
+    calcularSaldosProjetados(notasEntrada, notasSaida, demaisDocumentosFiscal, totalDCIP, mapaRegras) {
         const saldos = new Map();
-        for (const nota of notas) {
+        // Processa notas fiscais de ENTRADA
+        for (const nota of notasEntrada) {
             const regra = mapaRegras.get(nota.CODIGOCFOP);
             if (!regra || !regra.contabiliza) {
                 continue;
             }
-            this.processarNota(nota, regra, saldos);
+            this.processarNotaEntrada(nota, regra, saldos);
+        }
+        // Processa notas fiscais de SAÍDA
+        for (const nota of notasSaida) {
+            const regra = mapaRegras.get(nota.CODIGOCFOP);
+            if (!regra || !regra.contabiliza) {
+                continue;
+            }
+            this.processarNotaSaida(nota, regra, saldos);
+        }
+        // Processa demais documentos (PIS/COFINS)
+        this.processarDemaisDocumentosFiscal(demaisDocumentosFiscal, saldos);
+        // Processa DCIP (Código 770)
+        if (totalDCIP > 0) {
+            (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, _constants_1.CONTAS_ENTRADA.ICMS_A_RECUPERAR, totalDCIP, "D");
+            (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, _constants_1.CONTAS_SAIDA.DEDUCOES_RECEITA_BRUTA, totalDCIP, "C");
         }
         return saldos;
     }
     /**
-     * Processa uma nota fiscal aplicando as regras de conciliação.
+     * Processa PIS/COFINS de demais documentos (EFDF100DEMAISDOC).
      */
-    processarNota(nota, regra, saldos) {
-        // Calcula rateio de impostos (para IPI e retenções)
+    processarDemaisDocumentosFiscal(documentos, saldos) {
+        for (const doc of documentos) {
+            (0, fiscal_utils_1.processarPisCofinsRecuperavel)(saldos, doc.CONTACTB, doc.VALORPIS, doc.VALORCOFINS);
+        }
+    }
+    // ============= PROCESSAMENTO DE ENTRADA (COMPRAS) =============
+    /**
+     * Processa nota fiscal de ENTRADA
+     * Impostos vão para contas A RECUPERAR (ativo)
+     *
+     * Lógica:
+     * - D: Imposto a Recuperar (aumenta ativo)
+     * - C: Conta Principal (reduz custo da compra)
+     */
+    processarNotaEntrada(nota, regra, saldos) {
         const rateio = (0, fiscal_utils_1.calcularRateioImpostos)(nota);
         const valorIcms = nota.VALORIMPOSTO || 0;
         // ICMS A Recuperar
-        this.processarImpostoRecuperavel(saldos, valorIcms, _constants_1.CONTAS_SISTEMA.ICMS_A_RECUPERAR, regra.contasDebito || []);
+        this.processarImpostoRecuperavel(saldos, valorIcms, _constants_1.CONTAS_ENTRADA.ICMS_A_RECUPERAR, regra.contasDebito || []);
         // IPI A Recuperar
-        this.processarImpostoRecuperavel(saldos, rateio.valorIpiProporcional, _constants_1.CONTAS_SISTEMA.IPI_A_RECUPERAR, regra.contasDebito || []);
-        // ← MUDANÇA: Usar valores DIRETOS da nota (já vem correto da query)
+        this.processarImpostoRecuperavel(saldos, rateio.valorIpiProporcional, _constants_1.CONTAS_ENTRADA.IPI_A_RECUPERAR, regra.contasDebito || []);
         // PIS A Recuperar
-        this.processarImpostoRecuperavel(saldos, nota.VALORPIS || 0, // ← Valor correto do CFOP!
-        _constants_1.CONTAS_SISTEMA.PIS_A_RECUPERAR, regra.contasDebito || []);
+        this.processarImpostoRecuperavel(saldos, nota.VALORPIS || 0, _constants_1.CONTAS_ENTRADA.PIS_A_RECUPERAR, regra.contasDebito || []);
         // COFINS A Recuperar
-        this.processarImpostoRecuperavel(saldos, nota.VALORCOFINS || 0, // ← Valor correto do CFOP!
-        _constants_1.CONTAS_SISTEMA.COFINS_A_RECUPERAR, regra.contasDebito || []);
-        // 1. DÉBITO: Valor cheio (sem descontos)
+        this.processarImpostoRecuperavel(saldos, nota.VALORCOFINS || 0, _constants_1.CONTAS_ENTRADA.COFINS_A_RECUPERAR, regra.contasDebito || []);
+        // Débito principal (estoque, imobilizado, etc)
         if (regra.contasDebito) {
             regra.contasDebito.forEach((contaId) => {
                 (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaId, rateio.valorDebitoPrincipal, "D");
             });
         }
-        // 2. CRÉDITO: Valor do fornecedor (já descontado das retenções)
+        // Crédito principal (fornecedores)
         if (regra.contasCredito) {
             regra.contasCredito.forEach((contaId) => {
                 (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaId, rateio.valorCreditoPrincipal, "C");
             });
         }
-        // 3. RETENÇÕES: Apenas lança na conta de retidos
+        // Retenções na fonte
         if (rateio.valorRetidos > 0) {
-            (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, _constants_1.CONTAS_SISTEMA.RETIDOS, rateio.valorRetidos, "C");
+            (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, _constants_1.CONTAS_ENTRADA.RETIDOS, rateio.valorRetidos, "C");
         }
     }
     /**
-     * Processa imposto recuperável.
-     * Cria DÉBITO na conta de ativo (A Recuperar) e CRÉDITO na conta principal (reduz custo).
+     * Processa imposto recuperável (ENTRADA)
+     * D: Imposto a Recuperar
+     * C: Conta Principal (reduz custo)
      */
     processarImpostoRecuperavel(saldos, valor, contaAtivo, contasPrincipais) {
         if (valor <= 0)
             return;
-        // Débito no Ativo (Impostos A Recuperar)
+        // Débito: aumenta o ativo (imposto a recuperar)
         (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaAtivo, valor, "D");
-        // Crédito na(s) Conta(s) Principal(is) - Reduz o custo
+        // Crédito: reduz o custo das contas principais
         contasPrincipais.forEach((contaId) => {
             (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaId, valor, "C");
         });
     }
+    // ============= PROCESSAMENTO DE SAÍDA (VENDAS) =============
     /**
-     * Gera o balancete a partir dos saldos calculados.
+     * Processa nota fiscal de SAÍDA
+     * Impostos vão para contas A PAGAR (passivo)
+     *
+     * Lógica:
+     * - D: Deduções da Receita Bruta (2770)
+     * - C: Imposto a Pagar (passivo)
      */
+    processarNotaSaida(nota, regra, saldos) {
+        const rateio = (0, fiscal_utils_1.calcularRateioImpostos)(nota);
+        const valorIcms = nota.VALORIMPOSTO || 0;
+        // ICMS A Pagar
+        this.processarImpostoAPagar(saldos, valorIcms, _constants_1.CONTAS_SAIDA.ICMS_A_PAGAR);
+        // IPI A Pagar (COMENTADO - verificar se usa)
+        // this.processarImpostoAPagar(
+        //   saldos,
+        //   rateio.valorIpiProporcional,
+        //   CONTAS_SAIDA.IPI_A_PAGAR,
+        // );
+        // PIS A Pagar
+        this.processarImpostoAPagar(saldos, nota.VALORPIS || 0, _constants_1.CONTAS_SAIDA.PIS_A_PAGAR);
+        // COFINS A Pagar (mesma conta do PIS)
+        this.processarImpostoAPagar(saldos, nota.VALORCOFINS || 0, _constants_1.CONTAS_SAIDA.COFINS_A_PAGAR);
+        // Débito principal (receita de vendas)
+        if (regra.contasDebito) {
+            regra.contasDebito.forEach((contaId) => {
+                (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaId, rateio.valorDebitoPrincipal, "D");
+            });
+        }
+        // Crédito principal (clientes/contas a receber)
+        if (regra.contasCredito) {
+            regra.contasCredito.forEach((contaId) => {
+                (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaId, rateio.valorCreditoPrincipal, "C");
+            });
+        }
+        // Retenções (COMENTADO - verificar se tem em saídas)
+        // if (rateio.valorRetidos > 0) {
+        //   adicionarSaldoConta(
+        //     saldos,
+        //     CONTAS_SAIDA.RETIDOS_SAIDA,
+        //     rateio.valorRetidos,
+        //     "D",
+        //   );
+        // }
+    }
+    /**
+     * Processa imposto a pagar (SAÍDA)
+     * D: Deduções da Receita Bruta (2770)
+     * C: Imposto a Pagar (passivo)
+     */
+    processarImpostoAPagar(saldos, valor, contaPassivo) {
+        if (valor <= 0)
+            return;
+        // Débito: aumenta deduções da receita bruta (diminui resultado)
+        (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, _constants_1.CONTAS_SAIDA.DEDUCOES_RECEITA_BRUTA, valor, "D");
+        // Crédito: aumenta passivo (imposto a pagar)
+        (0, contabilidade_utils_2.adicionarSaldoConta)(saldos, contaPassivo, valor, "C");
+    }
+    // ============= GERAÇÃO DO BALANCETE =============
     gerarBalancete(arvore, saldos) {
         const contasPatrimoniais = (0, contabilidade_utils_1.filtrarContasPatrimoniais)(arvore);
         const linhas = [];
